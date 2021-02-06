@@ -122,13 +122,18 @@ namespace Microsoft.ReverseProxy.Middleware
         private ClusterInfo GetClusterInfo(string id, string policy, bool enabled = true)
         {
             var clusterConfig = new ClusterConfig(
-                new Cluster { Id = id },
-                new ClusterHealthCheckOptions(new ClusterPassiveHealthCheckOptions(enabled, policy, null), default),
-                default,
-                default,
-                null,
-                default,
-                default,
+                new Cluster
+                {
+                    Id = id,
+                    HealthCheck = new HealthCheckOptions
+                    {
+                        Passive = new PassiveHealthCheckOptions
+                        {
+                            Enabled = enabled,
+                            Policy = policy,
+                        }
+                    }
+                },
                 null);
             var clusterInfo = new ClusterInfo(id, new DestinationManager());
             clusterInfo.Config = clusterConfig;
@@ -143,7 +148,7 @@ namespace Microsoft.ReverseProxy.Middleware
         private Endpoint GetEndpoint(ClusterInfo cluster)
         {
             var endpoints = new List<Endpoint>(1);
-            var routeConfig = new RouteConfig(new RouteInfo("route-1"), new ProxyRoute(), cluster, endpoints.AsReadOnly(), Transforms.Empty);
+            var routeConfig = new RouteConfig(new RouteInfo("route-1"), new ProxyRoute(), cluster, HttpTransformer.Default);
             var endpoint = new Endpoint(default, new EndpointMetadataCollection(routeConfig), string.Empty);
             endpoints.Add(endpoint);
             return endpoint;

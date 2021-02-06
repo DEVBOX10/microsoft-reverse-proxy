@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Linq;
 
@@ -9,7 +10,7 @@ namespace Microsoft.Extensions.Configuration
     {
         internal static int? ReadInt32(this IConfiguration configuration, string name)
         {
-            return configuration[name] is string value ? int.Parse(value, NumberStyles.None, CultureInfo.InvariantCulture) : null;
+            return configuration[name] is string value ? int.Parse(value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture) : null;
         }
 
         internal static double? ReadDouble(this IConfiguration configuration, string name)
@@ -37,14 +38,14 @@ namespace Microsoft.Extensions.Configuration
             return configuration[name] is string value && !string.IsNullOrEmpty(value) ? Version.Parse(value + (value.Contains('.') ? "" : ".0")) : null;
         }
 
-        internal static IDictionary<string, string> ReadStringDictionary(this IConfigurationSection section)
+        internal static IReadOnlyDictionary<string, string> ReadStringDictionary(this IConfigurationSection section)
         {
             if (section.GetChildren() is var children && !children.Any())
             {
                 return null;
             }
 
-            return children.ToDictionary(s => s.Key, s => s.Value, StringComparer.OrdinalIgnoreCase);
+            return new ReadOnlyDictionary<string, string>(children.ToDictionary(s => s.Key, s => s.Value, StringComparer.OrdinalIgnoreCase));
         }
 
         internal static string[] ReadStringArray(this IConfigurationSection section)

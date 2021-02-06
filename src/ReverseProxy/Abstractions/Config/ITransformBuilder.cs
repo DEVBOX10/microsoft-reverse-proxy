@@ -3,7 +3,7 @@
 
 using System;
 using System.Collections.Generic;
-using Microsoft.ReverseProxy.Service.RuntimeModel.Transforms;
+using Microsoft.ReverseProxy.Service.Proxy;
 
 namespace Microsoft.ReverseProxy.Service
 {
@@ -16,11 +16,11 @@ namespace Microsoft.ReverseProxy.Service
         /// Validates that each transform is known and has the expected parameters. All transforms are validated and
         /// so all errors can be reported.
         /// </summary>
-        IList<Exception> Validate(IList<IDictionary<string, string>> transforms);
+        IList<Exception> Validate(IReadOnlyList<IReadOnlyDictionary<string, string>> transforms);
 
         /// <summary>
         /// Builds the given transforms into executable rules.
         /// </summary>
-        Transforms Build(IList<IDictionary<string, string>> rawTransforms);
+        HttpTransformer Build(IReadOnlyList<IReadOnlyDictionary<string, string>> rawTransforms);
     }
 }

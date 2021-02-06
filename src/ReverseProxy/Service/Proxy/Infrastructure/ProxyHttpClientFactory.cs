@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.Logging;
+using Microsoft.ReverseProxy.Telemetry;
 
 namespace Microsoft.ReverseProxy.Service.Proxy.Infrastructure
 {
@@ -59,12 +60,18 @@ namespace Microsoft.ReverseProxy.Service.Proxy.Infrastructure
             {
                 handler.MaxConnectionsPerServer = newClientOptions.MaxConnectionsPerServer.Value;
             }
-            if (newClientOptions.DangerousAcceptAnyServerCertificate)
+            if (newClientOptions.DangerousAcceptAnyServerCertificate ?? false)
             {
                 handler.SslOptions.RemoteCertificateValidationCallback = delegate { return true; };
             }
 
             Log.ProxyClientCreated(_logger, context.ClusterId);
+
+            if (newClientOptions.PropagateActivityContext.GetValueOrDefault(true))
+            {
+                return new HttpMessageInvoker(new ActivityPropagationHandler(handler), disposeHandler: true);
+            }
+
             return new HttpMessageInvoker(handler, disposeHandler: true);
         }
 

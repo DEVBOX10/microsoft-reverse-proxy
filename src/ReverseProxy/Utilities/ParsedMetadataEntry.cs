@@ -19,14 +19,14 @@ namespace Microsoft.ReverseProxy.Utilities
         public ParsedMetadataEntry(Parser parser, ClusterInfo cluster, string metadataName)
         {
             _parser = parser ?? throw new ArgumentNullException(nameof(parser));
-            _cluster = cluster ?? throw new ArgumentNullException(nameof(parser));
+            _cluster = cluster ?? throw new ArgumentNullException(nameof(cluster));
             _metadataName = metadataName ?? throw new ArgumentNullException(nameof(metadataName));
         }
 
         public T GetParsedOrDefault(T defaultValue)
         {
             var currentValue = _value;
-            if (_cluster.Config.Metadata != null && _cluster.Config.Metadata.TryGetValue(_metadataName, out var stringValue))
+            if (_cluster.Config.Options.Metadata != null && _cluster.Config.Options.Metadata.TryGetValue(_metadataName, out var stringValue))
             {
                 if (currentValue == null || currentValue.Item1 != stringValue)
                 {

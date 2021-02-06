@@ -7,6 +7,7 @@ using System.Text;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using Microsoft.ReverseProxy.Abstractions;
 using Microsoft.ReverseProxy.RuntimeModel;
 
 namespace Microsoft.ReverseProxy.Service.SessionAffinity
@@ -25,9 +26,9 @@ namespace Microsoft.ReverseProxy.Service.SessionAffinity
 
         public abstract string Mode { get; }
 
-        public virtual void AffinitizeRequest(HttpContext context, in ClusterSessionAffinityOptions options, DestinationInfo destination)
+        public virtual void AffinitizeRequest(HttpContext context, SessionAffinityOptions options, DestinationInfo destination)
         {
-            if (!options.Enabled)
+            if (!options.Enabled.GetValueOrDefault())
             {
                 throw new InvalidOperationException($"Session affinity is disabled for cluster.");
             }
@@ -40,9 +41,9 @@ namespace Microsoft.ReverseProxy.Service.SessionAffinity
             }
         }
 
-        public virtual AffinityResult FindAffinitizedDestinations(HttpContext context, IReadOnlyList<DestinationInfo> destinations, string clusterId, in ClusterSessionAffinityOptions options)
+        public virtual AffinityResult FindAffinitizedDestinations(HttpContext context, IReadOnlyList<DestinationInfo> destinations, string clusterId, SessionAffinityOptions options)
         {
-            if (!options.Enabled)
+            if (!options.Enabled.GetValueOrDefault())
             {
                 throw new InvalidOperationException($"Session affinity is disabled for cluster {clusterId}.");
             }
@@ -89,11 +90,11 @@ namespace Microsoft.ReverseProxy.Service.SessionAffinity
             return new AffinityResult(matchingDestinations, AffinityStatus.OK);
         }
 
-        protected virtual string GetSettingValue(string key, ClusterSessionAffinityOptions options)
+        protected virtual string GetSettingValue(string key, SessionAffinityOptions options)
         {
             if (options.Settings == null || !options.Settings.TryGetValue(key, out var value))
             {
-                throw new ArgumentException(nameof(options), $"{nameof(CookieSessionAffinityProvider)} couldn't find the required parameter {key} in session affinity settings.");
+                throw new ArgumentException($"{nameof(CookieSessionAffinityProvider)} couldn't find the required parameter {key} in session affinity settings.", nameof(options));
             }
 
             return value;
@@ -101,9 +102,9 @@ namespace Microsoft.ReverseProxy.Service.SessionAffinity
 
         protected abstract T GetDestinationAffinityKey(DestinationInfo destination);
 
-        protected abstract (T Key, bool ExtractedSuccessfully) GetRequestAffinityKey(HttpContext context, in ClusterSessionAffinityOptions options);
+        protected abstract (T Key, bool ExtractedSuccessfully) GetRequestAffinityKey(HttpContext context, SessionAffinityOptions options);
 
-        protected abstract void SetAffinityKey(HttpContext context, in ClusterSessionAffinityOptions options, T unencryptedKey);
+        protected abstract void SetAffinityKey(HttpContext context, SessionAffinityOptions options, T unencryptedKey);
 
         protected string Protect(string unencryptedKey)
         {

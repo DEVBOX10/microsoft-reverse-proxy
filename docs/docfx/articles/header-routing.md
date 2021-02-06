@@ -90,7 +90,7 @@ Code:
         {
             RouteId = "route1",
             ClusterId = "cluster1",
-            Match =
+            Match = new ProxyMatch
             {
                 Path = "{**catch-all}",
                 Headers = new[]
@@ -108,7 +108,7 @@ Code:
         {
             RouteId = "route2",
             ClusterId = "cluster1",
-            Match =
+            Match = new ProxyMatch
             {
                 Path = "{**catch-all}",
                 Headers = new[]
@@ -126,7 +126,7 @@ Code:
         {
             RouteId = "route3",
             ClusterId = "cluster1",
-            Match =
+            Match = new ProxyMatch
             {
                 Path = "{**catch-all}",
                 Headers = new[]
@@ -143,7 +143,7 @@ Code:
         {
             RouteId = "route4",
             ClusterId = "cluster1",
-            Match =
+            Match = new ProxyMatch
             {
                 Path = "{**catch-all}",
                 Headers = new[]
@@ -167,7 +167,7 @@ Code:
 
 ## Contract
 
-[RouteHeaderData](xref:Microsoft.ReverseProxy.Configuration.Contract.RouteHeaderData) defines the configuration contract, where [RouteHeader](xref:Microsoft.ReverseProxy.Abstractions.RouteHeader) defines the code contract. The only difference in these contracts is that RouteHeaderData defines an extra `Value` property for convenience, `Values` is preferred if specified.
+[RouteHeader](xref:Microsoft.ReverseProxy.Abstractions.RouteHeader) defines the code contract and is mapped from config.
 
 ### Name
 

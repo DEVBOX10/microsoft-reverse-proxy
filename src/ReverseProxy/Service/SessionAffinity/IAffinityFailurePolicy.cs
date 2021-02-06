@@ -3,6 +3,7 @@
 
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
+using Microsoft.ReverseProxy.Abstractions;
 using Microsoft.ReverseProxy.RuntimeModel;
 
 namespace Microsoft.ReverseProxy.Service.SessionAffinity
@@ -10,7 +11,7 @@ namespace Microsoft.ReverseProxy.Service.SessionAffinity
     /// <summary>
     /// Affinity failures handling policy.
     /// </summary>
-    internal interface IAffinityFailurePolicy
+    public interface IAffinityFailurePolicy
     {
         /// <summary>
         ///  A unique identifier for this failure policy. This will be referenced from config.
@@ -25,9 +26,9 @@ namespace Microsoft.ReverseProxy.Service.SessionAffinity
         /// <param name="options">Session affinity options set for the cluster.</param>
         /// <param name="affinityStatus">Affinity resolution status.</param>
         /// <returns>
-        /// <see cref="true"/> if the failure is considered recoverable and the request processing can proceed.
-        /// Otherwise, <see cref="false"/> indicating that an error response has been generated and the request's processing must be terminated.
+        /// 'true' if the failure is considered recoverable and the request processing can proceed.
+        /// Otherwise, 'false' indicating that an error response has been generated and the request's processing must be terminated.
         /// </returns>
-        public Task<bool> Handle(HttpContext context, ClusterSessionAffinityOptions options, AffinityStatus affinityStatus);
+        public Task<bool> Handle(HttpContext context, SessionAffinityOptions options, AffinityStatus affinityStatus);
     }
 }

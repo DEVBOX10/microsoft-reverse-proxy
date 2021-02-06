@@ -16,6 +16,7 @@ using Microsoft.ReverseProxy.Abstractions.ClusterDiscovery.Contract;
 using Microsoft.ReverseProxy.Abstractions.RouteDiscovery.Contract;
 using Microsoft.ReverseProxy.Service.Config;
 using Microsoft.ReverseProxy.Service.HealthChecks;
+using Microsoft.ReverseProxy.Service.LoadBalancing;
 using Microsoft.ReverseProxy.Service.SessionAffinity;
 using Microsoft.ReverseProxy.Utilities;
 using CorsConstants = Microsoft.ReverseProxy.Abstractions.RouteDiscovery.Contract.CorsConstants;
@@ -46,7 +47,7 @@ namespace Microsoft.ReverseProxy.Service
             @"(?:" + DnsLabelRegexPattern + @"\.)*" +
             DnsLabelRegexPattern +
             @"$";
-        private static readonly Regex _hostNameRegex = new Regex(HostNameRegexPattern);
+        private static readonly Regex _hostNameRegex = new Regex(HostNameRegexPattern, RegexOptions.Compiled);
 
         private static readonly HashSet<string> _validMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -56,6 +57,7 @@ namespace Microsoft.ReverseProxy.Service
         private readonly ITransformBuilder _transformBuilder;
         private readonly IAuthorizationPolicyProvider _authorizationPolicyProvider;
         private readonly ICorsPolicyProvider _corsPolicyProvider;
+        private readonly IDictionary<string, ILoadBalancingPolicy> _loadBalancingPolicies;
         private readonly IDictionary<string, ISessionAffinityProvider> _sessionAffinityProviders;
         private readonly IDictionary<string, IAffinityFailurePolicy> _affinityFailurePolicies;
         private readonly IDictionary<string, IActiveHealthCheckPolicy> _activeHealthCheckPolicies;
@@ -65,6 +67,7 @@ namespace Microsoft.ReverseProxy.Service
         public ConfigValidator(ITransformBuilder transformBuilder,
             IAuthorizationPolicyProvider authorizationPolicyProvider,
             ICorsPolicyProvider corsPolicyProvider,
+            IEnumerable<ILoadBalancingPolicy> loadBalancingPolicies,
             IEnumerable<ISessionAffinityProvider> sessionAffinityProviders,
             IEnumerable<IAffinityFailurePolicy> affinityFailurePolicies,
             IEnumerable<IActiveHealthCheckPolicy> activeHealthCheckPolicies,
@@ -73,6 +76,7 @@ namespace Microsoft.ReverseProxy.Service
             _transformBuilder = transformBuilder ?? throw new ArgumentNullException(nameof(transformBuilder));
             _authorizationPolicyProvider = authorizationPolicyProvider ?? throw new ArgumentNullException(nameof(authorizationPolicyProvider));
             _corsPolicyProvider = corsPolicyProvider ?? throw new ArgumentNullException(nameof(corsPolicyProvider));
+            _loadBalancingPolicies = loadBalancingPolicies?.ToDictionaryByUniqueId(p => p.Name) ?? throw new ArgumentNullException(nameof(loadBalancingPolicies));
             _sessionAffinityProviders = sessionAffinityProviders?.ToDictionaryByUniqueId(p => p.Mode) ?? throw new ArgumentNullException(nameof(sessionAffinityProviders));
             _affinityFailurePolicies = affinityFailurePolicies?.ToDictionaryByUniqueId(p => p.Name) ?? throw new ArgumentNullException(nameof(affinityFailurePolicies));
             _activeHealthCheckPolicies = activeHealthCheckPolicies?.ToDictionaryByUniqueId(p => p.Name) ?? throw new ArgumentNullException(nameof(activeHealthCheckPolicies));
@@ -90,6 +94,16 @@ namespace Microsoft.ReverseProxy.Service
                 errors.Add(new ArgumentException("Missing Route Id."));
             }
 
+            errors.AddRange(_transformBuilder.Validate(route.Transforms));
+            await ValidateAuthorizationPolicyAsync(errors, route.AuthorizationPolicy, route.RouteId);
+            await ValidateCorsPolicyAsync(errors, route.CorsPolicy, route.RouteId);
+
+            if (route.Match == null)
+            {
+                errors.Add(new ArgumentException($"Route '{route.RouteId}' did not set any match criteria, it requires Hosts or Path specified. Set the Path to '/{{**catchall}}' to match all requests."));
+                return errors;
+            }
+
             if ((route.Match.Hosts == null || route.Match.Hosts.Count == 0 || route.Match.Hosts.Any(host => string.IsNullOrEmpty(host))) && string.IsNullOrEmpty(route.Match.Path))
             {
                 errors.Add(new ArgumentException($"Route '{route.RouteId}' requires Hosts or Path specified. Set the Path to '/{{**catchall}}' to match all requests."));
@@ -99,9 +113,6 @@ namespace Microsoft.ReverseProxy.Service
             ValidatePath(errors, route.Match.Path, route.RouteId);
             ValidateMethods(errors, route.Match.Methods, route.RouteId);
             ValidateHeaders(errors, route.Match.Headers, route.RouteId);
-            errors.AddRange(_transformBuilder.Validate(route.Transforms));
-            await ValidateAuthorizationPolicyAsync(errors, route.AuthorizationPolicy, route.RouteId);
-            await ValidateCorsPolicyAsync(errors, route.CorsPolicy, route.RouteId);
 
             return errors;
         }
@@ -117,6 +128,7 @@ namespace Microsoft.ReverseProxy.Service
                 errors.Add(new ArgumentException("Missing Cluster Id."));
             }
 
+            ValidateLoadBalancing(errors, cluster);
             ValidateSessionAffinity(errors, cluster);
             ValidateProxyHttpClient(errors, cluster);
             ValidateProxyHttpRequest(errors, cluster);
@@ -126,7 +138,7 @@ namespace Microsoft.ReverseProxy.Service
             return new ValueTask<IList<Exception>>(errors);
         }
 
-        private void ValidateHost(IList<Exception> errors, IReadOnlyList<string> hosts, string routeId)
+        private static void ValidateHost(IList<Exception> errors, IReadOnlyList<string> hosts, string routeId)
         {
             // Host is optional when Path is specified
             if (hosts == null || hosts.Count == 0)
@@ -143,7 +155,7 @@ namespace Microsoft.ReverseProxy.Service
             }
         }
 
-        private void ValidatePath(IList<Exception> errors, string path, string routeId)
+        private static void ValidatePath(IList<Exception> errors, string path, string routeId)
         {
             // Path is optional when Host is specified
             if (string.IsNullOrEmpty(path))
@@ -161,7 +173,7 @@ namespace Microsoft.ReverseProxy.Service
             }
         }
 
-        private void ValidateMethods(IList<Exception> errors, IReadOnlyList<string> methods, string routeId)
+        private static void ValidateMethods(IList<Exception> errors, IReadOnlyList<string> methods, string routeId)
         {
             // Methods are optional
             if (methods == null)
@@ -185,7 +197,7 @@ namespace Microsoft.ReverseProxy.Service
             }
         }
 
-        private void ValidateHeaders(List<Exception> errors, IReadOnlyList<RouteHeader> headers, string routeId)
+        private static void ValidateHeaders(List<Exception> errors, IReadOnlyList<RouteHeader> headers, string routeId)
         {
             // Headers are optional
             if (headers == null)
@@ -227,6 +239,11 @@ namespace Microsoft.ReverseProxy.Service
             }
 
             if (string.Equals(AuthorizationConstants.Default, authorizationPolicyName, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            if (string.Equals(AuthorizationConstants.Anonymous, authorizationPolicyName, StringComparison.OrdinalIgnoreCase))
             {
                 return;
             }
@@ -277,9 +294,24 @@ namespace Microsoft.ReverseProxy.Service
             }
         }
 
+        private void ValidateLoadBalancing(IList<Exception> errors, Cluster cluster)
+        {
+            var loadBalancingPolicy = cluster.LoadBalancingPolicy;
+            if (string.IsNullOrEmpty(loadBalancingPolicy))
+            {
+                // The default.
+                loadBalancingPolicy = LoadBalancingPolicies.PowerOfTwoChoices;
+            }
+
+            if (!_loadBalancingPolicies.ContainsKey(loadBalancingPolicy))
+            {
+                errors.Add(new ArgumentException($"No matching {nameof(ILoadBalancingPolicy)} found for the load balancing policy '{loadBalancingPolicy}' set on the cluster '{cluster.Id}'."));
+            }
+        }
+
         private void ValidateSessionAffinity(IList<Exception> errors, Cluster cluster)
         {
-            if (cluster.SessionAffinity == null || !cluster.SessionAffinity.Enabled)
+            if (!(cluster.SessionAffinity?.Enabled ?? false))
             {
                 // Session affinity is disabled
                 return;
@@ -310,7 +342,7 @@ namespace Microsoft.ReverseProxy.Service
             }
         }
 
-        private void ValidateProxyHttpClient(IList<Exception> errors, Cluster cluster)
+        private static void ValidateProxyHttpClient(IList<Exception> errors, Cluster cluster)
         {
             if (cluster.HttpClient == null)
             {
@@ -324,7 +356,7 @@ namespace Microsoft.ReverseProxy.Service
             }
         }
 
-        private void ValidateProxyHttpRequest(IList<Exception> errors, Cluster cluster)
+        private static void ValidateProxyHttpRequest(IList<Exception> errors, Cluster cluster)
         {
             if (cluster.HttpRequest == null)
             {
@@ -343,7 +375,7 @@ namespace Microsoft.ReverseProxy.Service
 
         private void ValidateActiveHealthCheck(IList<Exception> errors, Cluster cluster)
         {
-            if (cluster.HealthCheck == null || cluster.HealthCheck.Active == null || !cluster.HealthCheck.Active.Enabled)
+            if (!(cluster.HealthCheck?.Active?.Enabled ?? false))
             {
                 // Active health check is disabled
                 return;
@@ -371,9 +403,9 @@ namespace Microsoft.ReverseProxy.Service
             }
         }
 
-        private void ValidatePassiveHealthCheck(IList<Exception> errors, Cluster cluster)
+        private static void ValidatePassiveHealthCheck(IList<Exception> errors, Cluster cluster)
         {
-            if (cluster.HealthCheck == null || cluster.HealthCheck.Passive == null || !cluster.HealthCheck.Passive.Enabled)
+            if (!(cluster.HealthCheck?.Passive?.Enabled ?? false))
             {
                 // Passive health check is disabled
                 return;
