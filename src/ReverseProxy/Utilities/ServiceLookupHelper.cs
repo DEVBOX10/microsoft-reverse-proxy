@@ -4,7 +4,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Microsoft.ReverseProxy.Utilities
+namespace Yarp.ReverseProxy.Utilities
 {
     internal static class ServiceLookupHelper
     {
@@ -28,12 +28,7 @@ namespace Microsoft.ReverseProxy.Utilities
             return result;
         }
 
-        public static T GetRequiredServiceById<T>(this IDictionary<string, T> services, string id)
-        {
-            return services.GetRequiredServiceById(id, id);
-        }
-
-        public static T GetRequiredServiceById<T>(this IDictionary<string, T> services, string id, string defaultId)
+        public static T GetRequiredServiceById<T>(this IDictionary<string, T> services, string? id, string defaultId)
         {
             var lookup = id;
             if (string.IsNullOrEmpty(lookup))
@@ -43,7 +38,7 @@ namespace Microsoft.ReverseProxy.Utilities
 
             if (!services.TryGetValue(lookup, out var result))
             {
-                throw new ArgumentException($"No {typeof(T)} was found for the id {lookup}.", nameof(id));
+                throw new ArgumentException($"No {typeof(T)} was found for the id '{lookup}'.", nameof(id));
             }
             return result;
         }

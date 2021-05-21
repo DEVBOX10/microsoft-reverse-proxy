@@ -4,21 +4,21 @@
 using System.Collections.Generic;
 using Xunit;
 
-namespace Microsoft.ReverseProxy.Abstractions.Tests
+namespace Yarp.ReverseProxy.Abstractions.Tests
 {
     public class DestinationTests
     {
         [Fact]
         public void Equals_Same_Value_Returns_True()
         {
-            var options1 = new Destination
+            var options1 = new DestinationConfig
             {
                 Address = "https://localhost:10000/destA",
                 Health = "https://localhost:20000/destA",
                 Metadata = new Dictionary<string, string> { { "destA-K1", "destA-V1" }, { "destA-K2", "destA-V2" } }
             };
 
-            var options2 = new Destination
+            var options2 = new DestinationConfig
             {
                 Address = "https://localhost:10000/destA",
                 Health = "https://localhost:20000/destA",
@@ -36,7 +36,7 @@ namespace Microsoft.ReverseProxy.Abstractions.Tests
         public void Equals_Different_Value_Returns_False()
         {
 
-            var options1 = new Destination
+            var options1 = new DestinationConfig
             {
                 Address = "https://localhost:10000/destA",
                 Health = "https://localhost:20000/destA",
@@ -57,7 +57,7 @@ namespace Microsoft.ReverseProxy.Abstractions.Tests
         [Fact]
         public void Equals_Second_Null_Returns_False()
         {
-            var options1 = new Destination();
+            var options1 = new DestinationConfig();
 
             var equals = options1.Equals(null);
 

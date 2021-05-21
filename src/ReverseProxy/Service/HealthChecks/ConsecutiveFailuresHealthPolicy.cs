@@ -7,17 +7,17 @@ using System.Globalization;
 using System.Net.Http;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Options;
-using Microsoft.ReverseProxy.Abstractions;
-using Microsoft.ReverseProxy.RuntimeModel;
-using Microsoft.ReverseProxy.Utilities;
+using Yarp.ReverseProxy.Abstractions;
+using Yarp.ReverseProxy.RuntimeModel;
+using Yarp.ReverseProxy.Utilities;
 
-namespace Microsoft.ReverseProxy.Service.HealthChecks
+namespace Yarp.ReverseProxy.Service.HealthChecks
 {
-    internal class ConsecutiveFailuresHealthPolicy : IActiveHealthCheckPolicy
+    internal sealed class ConsecutiveFailuresHealthPolicy : IActiveHealthCheckPolicy
     {
         private readonly ConsecutiveFailuresHealthPolicyOptions _options;
-        private readonly ConditionalWeakTable<ClusterInfo, ParsedMetadataEntry<double>> _clusterThresholds = new ConditionalWeakTable<ClusterInfo, ParsedMetadataEntry<double>>();
-        private readonly ConditionalWeakTable<DestinationInfo, AtomicCounter> _failureCounters = new ConditionalWeakTable<DestinationInfo, AtomicCounter>();
+        private readonly ConditionalWeakTable<ClusterState, ParsedMetadataEntry<double>> _clusterThresholds = new ConditionalWeakTable<ClusterState, ParsedMetadataEntry<double>>();
+        private readonly ConditionalWeakTable<DestinationState, AtomicCounter> _failureCounters = new ConditionalWeakTable<DestinationState, AtomicCounter>();
         private readonly IDestinationHealthUpdater _healthUpdater;
 
         public string Name => HealthCheckConstants.ActivePolicy.ConsecutiveFailures;
@@ -28,7 +28,7 @@ namespace Microsoft.ReverseProxy.Service.HealthChecks
             _healthUpdater = healthUpdater ?? throw new ArgumentNullException(nameof(healthUpdater));
         }
 
-        public void ProbingCompleted(ClusterInfo cluster, IReadOnlyList<DestinationProbingResult> probingResults)
+        public void ProbingCompleted(ClusterState cluster, IReadOnlyList<DestinationProbingResult> probingResults)
         {
             if (probingResults.Count == 0)
             {
@@ -50,13 +50,13 @@ namespace Microsoft.ReverseProxy.Service.HealthChecks
             _healthUpdater.SetActive(cluster, newHealthStates);
         }
 
-        private double GetFailureThreshold(ClusterInfo cluster)
+        private double GetFailureThreshold(ClusterState cluster)
         {
             var thresholdEntry = _clusterThresholds.GetValue(cluster, c => new ParsedMetadataEntry<double>(TryParse, c, ConsecutiveFailuresHealthPolicyOptions.ThresholdMetadataName));
             return thresholdEntry.GetParsedOrDefault(_options.DefaultThreshold);
         }
 
-        private DestinationHealth EvaluateHealthState(double threshold, HttpResponseMessage response, AtomicCounter count)
+        private static DestinationHealth EvaluateHealthState(double threshold, HttpResponseMessage? response, AtomicCounter count)
         {
             DestinationHealth newHealth;
             if (response != null && response.IsSuccessStatusCode)

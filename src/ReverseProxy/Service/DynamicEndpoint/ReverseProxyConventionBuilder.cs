@@ -5,10 +5,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.ReverseProxy.Abstractions;
-using Microsoft.ReverseProxy.RuntimeModel;
+using Yarp.ReverseProxy.Abstractions;
+using Yarp.ReverseProxy.RuntimeModel;
 
-namespace Microsoft.ReverseProxy
+namespace Yarp.ReverseProxy
 {
     public class ReverseProxyConventionBuilder : IEndpointConventionBuilder
     {
@@ -16,7 +16,7 @@ namespace Microsoft.ReverseProxy
 
         internal ReverseProxyConventionBuilder(List<Action<EndpointBuilder>> conventions)
         {
-            _conventions = conventions;
+            _conventions = conventions ?? throw new ArgumentNullException(nameof(conventions));
         }
 
         /// <summary>
@@ -55,15 +55,15 @@ namespace Microsoft.ReverseProxy
         /// </summary>
         /// <param name="convention">The convention to add to the builder.</param>
         /// <returns></returns>
-        public ReverseProxyConventionBuilder ConfigureEndpoints(Action<IEndpointConventionBuilder, ProxyRoute> convention)
+        public ReverseProxyConventionBuilder ConfigureEndpoints(Action<IEndpointConventionBuilder, RouteConfig> convention)
         {
             _ = convention ?? throw new ArgumentNullException(nameof(convention));
 
             void Action(EndpointBuilder endpointBuilder)
             {
-                var routeConfig = endpointBuilder.Metadata.OfType<RouteConfig>().Single();
+                var route = endpointBuilder.Metadata.OfType<RouteModel>().Single();
                 var conventionBuilder = new EndpointBuilderConventionBuilder(endpointBuilder);
-                convention(conventionBuilder, routeConfig.ProxyRoute);
+                convention(conventionBuilder, route.Config);
             }
 
             Add(Action);
@@ -76,18 +76,18 @@ namespace Microsoft.ReverseProxy
         /// </summary>
         /// <param name="convention">The convention to add to the builder.</param>
         /// <returns></returns>
-        public ReverseProxyConventionBuilder ConfigureEndpoints(Action<IEndpointConventionBuilder, ProxyRoute, Cluster> convention)
+        public ReverseProxyConventionBuilder ConfigureEndpoints(Action<IEndpointConventionBuilder, RouteConfig, ClusterConfig?> convention)
         {
             _ = convention ?? throw new ArgumentNullException(nameof(convention));
 
             void Action(EndpointBuilder endpointBuilder)
             {
-                var routeConfig = endpointBuilder.Metadata.OfType<RouteConfig>().Single();
+                var routeModel = endpointBuilder.Metadata.OfType<RouteModel>().Single();
 
-                var cluster = routeConfig.Cluster?.Config.Options;
-                var proxyRoute = routeConfig.ProxyRoute;
+                var clusterConfig = routeModel.Cluster?.Model.Config;
+                var routeConfig = routeModel.Config;
                 var conventionBuilder = new EndpointBuilderConventionBuilder(endpointBuilder);
-                convention(conventionBuilder, proxyRoute, cluster);
+                convention(conventionBuilder, routeConfig, clusterConfig);
             }
 
             Add(Action);

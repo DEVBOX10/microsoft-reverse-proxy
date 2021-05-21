@@ -2,16 +2,14 @@
 // Licensed under the MIT License.
 
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Net;
 using System.Net.Http;
-using Microsoft.ReverseProxy.Abstractions;
-using Microsoft.ReverseProxy.RuntimeModel;
-using Microsoft.ReverseProxy.Service.Proxy;
 using Xunit;
+using Yarp.ReverseProxy.Abstractions;
+using Yarp.ReverseProxy.RuntimeModel;
+using Yarp.ReverseProxy.Service.Proxy;
 
-namespace Microsoft.ReverseProxy.Service.HealthChecks
+namespace Yarp.ReverseProxy.Service.HealthChecks
 {
     public class DefaultProbingRequestFactoryTests
     {
@@ -24,17 +22,17 @@ namespace Microsoft.ReverseProxy.Service.HealthChecks
         [InlineData("https://localhost:10000/", "https://localhost:20000/api", "/health/", "https://localhost:20000/api/health/")]
         public void CreateRequest_HealthEndpointIsNotDefined_UseDestinationAddress(string address, string health, string healthPath, string expectedRequestUri)
         {
-            var clusterConfig = GetClusterConfig("cluster0",
-                new ActiveHealthCheckOptions()
+            var clusterModel = GetClusterConfig("cluster0",
+                new ActiveHealthCheckConfig()
                 {
                     Enabled = true,
                     Policy = "policy",
                     Path = healthPath,
                 }, HttpVersion.Version20);
-            var destinationConfig = new DestinationConfig(address, health);
+            var destinationModel = new DestinationModel(new DestinationConfig { Address = address, Health = health });
             var factory = new DefaultProbingRequestFactory();
 
-            var request = factory.CreateRequest(clusterConfig, destinationConfig);
+            var request = factory.CreateRequest(clusterModel, destinationModel);
 
             Assert.Equal(expectedRequestUri, request.RequestUri.AbsoluteUri);
         }
@@ -45,8 +43,8 @@ namespace Microsoft.ReverseProxy.Service.HealthChecks
         public void CreateRequest_RequestVersionProperties(string versionString)
         {
             var version = versionString != null ? Version.Parse(versionString) : null;
-            var clusterConfig = GetClusterConfig("cluster0",
-                new ActiveHealthCheckOptions()
+            var clusterModel = GetClusterConfig("cluster0",
+                new ActiveHealthCheckConfig()
                 {
                     Enabled = true,
                     Policy = "policy",
@@ -56,10 +54,10 @@ namespace Microsoft.ReverseProxy.Service.HealthChecks
                 , HttpVersionPolicy.RequestVersionExact
 #endif
                 );
-            var destinationConfig = new DestinationConfig("https://localhost:10000/", null);
+            var destinationModel = new DestinationModel(new DestinationConfig { Address = "https://localhost:10000/" });
             var factory = new DefaultProbingRequestFactory();
 
-            var request = factory.CreateRequest(clusterConfig, destinationConfig);
+            var request = factory.CreateRequest(clusterModel, destinationModel);
 
             Assert.Equal(version ?? HttpVersion.Version20, request.Version);
 #if NET
@@ -67,21 +65,21 @@ namespace Microsoft.ReverseProxy.Service.HealthChecks
 #endif
         }
 
-        private ClusterConfig GetClusterConfig(string id, ActiveHealthCheckOptions healthCheckOptions, Version version
+        private ClusterModel GetClusterConfig(string id, ActiveHealthCheckConfig healthCheckOptions, Version version
 #if NET
             , HttpVersionPolicy versionPolicy = HttpVersionPolicy.RequestVersionExact
 #endif
             )
         {
-            return new ClusterConfig(
-                new Cluster
+            return new ClusterModel(
+                new ClusterConfig
                 {
-                    Id = id,
-                    HealthCheck = new HealthCheckOptions()
+                    ClusterId = id,
+                    HealthCheck = new HealthCheckConfig()
                     {
                         Active = healthCheckOptions,
                     },
-                    HttpRequest = new RequestProxyOptions
+                    HttpRequest = new RequestProxyConfig
                     {
                         Timeout = TimeSpan.FromSeconds(60),
                         Version = version,
@@ -90,7 +88,7 @@ namespace Microsoft.ReverseProxy.Service.HealthChecks
 #endif
                     }
                 },
-                null);
+                new HttpMessageInvoker(new HttpClientHandler()));
         }
     }
 }

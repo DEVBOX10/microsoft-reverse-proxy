@@ -9,15 +9,15 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using Microsoft.ReverseProxy.Utilities;
+using Yarp.ReverseProxy.Utilities;
 
-namespace Microsoft.ReverseProxy.ServiceFabric
+namespace Yarp.ReverseProxy.ServiceFabric
 {
     /// <summary>
     /// A wrapper class for the service fabric client SDK.
     /// Microsoft documentation: https://docs.microsoft.com/en-us/dotnet/api/system.fabric.fabricclient.queryclient?view=azure-dotnet .
     /// </summary>
-    internal class QueryClientWrapper : IQueryClientWrapper
+    internal sealed class QueryClientWrapper : IQueryClientWrapper
     {
         private readonly ILogger<QueryClientWrapper> _logger;
         private readonly FabricClient.QueryClient _queryClient;

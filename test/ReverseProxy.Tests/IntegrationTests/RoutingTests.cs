@@ -13,10 +13,10 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.ReverseProxy.Abstractions;
 using Xunit;
+using Yarp.ReverseProxy.Abstractions;
 
-namespace Microsoft.ReverseProxy.IntegrationTests
+namespace Yarp.ReverseProxy.IntegrationTests
 {
     public class RoutingTests
     {
@@ -25,11 +25,11 @@ namespace Microsoft.ReverseProxy.IntegrationTests
         {
             var routes = new[]
             {
-                new ProxyRoute()
+                new RouteConfig()
                 {
                     RouteId = "route1",
                     ClusterId = "cluster1",
-                    Match = new ProxyMatch { Path = "/api/{**catchall}" }
+                    Match = new RouteMatch { Path = "/api/{**catchall}" }
                 }
             };
 
@@ -51,11 +51,11 @@ namespace Microsoft.ReverseProxy.IntegrationTests
         {
             var routes = new[]
             {
-                new ProxyRoute()
+                new RouteConfig()
                 {
                     RouteId = "route1",
                     ClusterId = "cluster1",
-                    Match = new ProxyMatch { Hosts = new[] { "*.example.com" } }
+                    Match = new RouteMatch { Hosts = new[] { "*.example.com" } }
                 }
             };
 
@@ -77,11 +77,11 @@ namespace Microsoft.ReverseProxy.IntegrationTests
         {
             var routes = new[]
             {
-                new ProxyRoute()
+                new RouteConfig()
                 {
                     RouteId = "route1",
                     ClusterId = "cluster1",
-                    Match = new ProxyMatch
+                    Match = new RouteMatch
                     {
                         Path = "/{**catchall}",
                         Headers = new[]
@@ -131,11 +131,11 @@ namespace Microsoft.ReverseProxy.IntegrationTests
         {
             var routes = new[]
             {
-                new ProxyRoute()
+                new RouteConfig()
                 {
                     RouteId = "route1",
                     ClusterId = "cluster1",
-                    Match = new ProxyMatch
+                    Match = new RouteMatch
                     {
                         Path = "/{**catchall}",
                         Headers = new[]
@@ -148,11 +148,11 @@ namespace Microsoft.ReverseProxy.IntegrationTests
                         }
                     }
                 },
-                new ProxyRoute()
+                new RouteConfig()
                 {
                     RouteId = "route2",
                     ClusterId = "cluster1",
-                    Match = new ProxyMatch
+                    Match = new RouteMatch
                     {
                         Path = "/{**catchall}",
                         Headers = new[]
@@ -165,11 +165,11 @@ namespace Microsoft.ReverseProxy.IntegrationTests
                         }
                     }
                 },
-                new ProxyRoute()
+                new RouteConfig()
                 {
                     RouteId = "route3",
                     ClusterId = "cluster1",
-                    Match = new ProxyMatch
+                    Match = new RouteMatch
                     {
                         Path = "/{**catchall}",
                         Headers = new[]
@@ -242,36 +242,36 @@ namespace Microsoft.ReverseProxy.IntegrationTests
         {
             var routes = new[]
             {
-                new ProxyRoute()
+                new RouteConfig()
                 {
                     RouteId = "route1",
                     ClusterId = "cluster1",
-                    Match = new ProxyMatch { Path = "/route1" }
+                    Match = new RouteMatch { Path = "/route1" }
                 },
-                new ProxyRoute()
+                new RouteConfig()
                 {
                     RouteId = "route2",
                     ClusterId = "cluster1",
-                    Match = new ProxyMatch
+                    Match = new RouteMatch
                     {
                         Path = "/{**catchall}",
                         Methods = new[] { "GET" },
                     }
                 },
-                new ProxyRoute()
+                new RouteConfig()
                 {
                     RouteId = "route3",
                     ClusterId = "cluster1",
-                    Match = new ProxyMatch
+                    Match = new RouteMatch
                     {
                         Hosts = new[] { "localhost" }
                     }
                 },
-                new ProxyRoute()
+                new RouteConfig()
                 {
                     RouteId = "route4",
                     ClusterId = "cluster1",
-                    Match = new ProxyMatch
+                    Match = new RouteMatch
                     {
                         Path = "/{**catchall}",
                         Headers = new[]
@@ -320,16 +320,16 @@ namespace Microsoft.ReverseProxy.IntegrationTests
             Assert.Equal("route4", response.Headers.GetValues("route").SingleOrDefault());
         }
 
-        public static Task<IHost> CreateHostAsync(IReadOnlyList<ProxyRoute> routes)
+        public static Task<IHost> CreateHostAsync(IReadOnlyList<RouteConfig> routes)
         {
             var clusters = new[]
             {
-                new Cluster()
+                new ClusterConfig()
                 {
-                    Id = "cluster1",
-                    Destinations = new Dictionary<string, Destination>(StringComparer.OrdinalIgnoreCase)
+                    ClusterId = "cluster1",
+                    Destinations = new Dictionary<string, DestinationConfig>(StringComparer.OrdinalIgnoreCase)
                     {
-                        { "d1", new Destination() { Address = "http://localhost/" }  }
+                        { "d1", new DestinationConfig() { Address = "http://localhost/" }  }
                     }
                 }
             };

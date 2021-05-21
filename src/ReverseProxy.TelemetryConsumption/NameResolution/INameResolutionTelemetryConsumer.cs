@@ -3,7 +3,7 @@
 
 using System;
 
-namespace Microsoft.ReverseProxy.Telemetry.Consumption
+namespace Yarp.ReverseProxy.Telemetry.Consumption
 {
     /// <summary>
     /// A consumer of System.Net.NameResolution EventSource events.
@@ -15,18 +15,18 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
         /// </summary>
         /// <param name="timestamp">Timestamp when the event was fired.</param>
         /// <param name="hostNameOrAddress">Host name or address we are resolving.</param>
-        void OnResolutionStart(DateTime timestamp, string hostNameOrAddress);
+        void OnResolutionStart(DateTime timestamp, string hostNameOrAddress) { }
 
         /// <summary>
         /// Called after a name resolution.
         /// </summary>
         /// <param name="timestamp">Timestamp when the event was fired.</param>
-        void OnResolutionStop(DateTime timestamp);
+        void OnResolutionStop(DateTime timestamp) { }
 
         /// <summary>
         /// Called before <see cref="OnResolutionStop(DateTime)"/> if the name resolution failed.
         /// </summary>
         /// <param name="timestamp">Timestamp when the event was fired.</param>
-        void OnResolutionFailed(DateTime timestamp);
+        void OnResolutionFailed(DateTime timestamp) { }
     }
 }

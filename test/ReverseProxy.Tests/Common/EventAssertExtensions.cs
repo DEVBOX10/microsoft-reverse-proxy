@@ -5,10 +5,10 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.Tracing;
 using System.Linq;
-using Microsoft.ReverseProxy.Telemetry;
 using Xunit;
+using Yarp.ReverseProxy.Telemetry;
 
-namespace Microsoft.ReverseProxy.Common.Tests
+namespace Yarp.ReverseProxy.Common.Tests
 {
     internal static class EventAssertExtensions
     {
@@ -25,13 +25,12 @@ namespace Microsoft.ReverseProxy.Common.Tests
                 .ToArray();
         }
 
-        public static void AssertContainProxyStages(this List<EventWrittenEventArgs> events, bool hasRequestContent = true, bool upgrade = false)
+        public static void AssertContainProxyStages(this List<EventWrittenEventArgs> events, bool hasRequestContent = true, bool upgrade = false, bool hasResponseContent = true)
         {
             var stages = new List<ProxyStage>()
             {
                 ProxyStage.SendAsyncStart,
                 ProxyStage.SendAsyncStop,
-                ProxyStage.ResponseContentTransferStart,
             };
 
             if (hasRequestContent)
@@ -42,6 +41,11 @@ namespace Microsoft.ReverseProxy.Common.Tests
             if (upgrade)
             {
                 stages.Add(ProxyStage.ResponseUpgrade);
+            }
+
+            if (hasResponseContent)
+            {
+                stages.Add(ProxyStage.ResponseContentTransferStart);
             }
 
             events.AssertContainProxyStages(stages.ToArray());

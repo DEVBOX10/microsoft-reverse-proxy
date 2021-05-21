@@ -5,7 +5,7 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Primitives;
 
-namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
+namespace Yarp.ReverseProxy.Service.RuntimeModel.Transforms
 {
     /// <summary>
     /// Sets or appends simple response trailer values.
@@ -14,8 +14,13 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
     {
         public ResponseTrailerValueTransform(string headerName, string value, bool append, bool always)
         {
-            HeaderName = headerName ?? throw new System.ArgumentNullException(nameof(headerName));
-            Value = value ?? throw new System.ArgumentNullException(nameof(value));
+            if (string.IsNullOrEmpty(headerName))
+            {
+                throw new ArgumentException($"'{nameof(headerName)}' cannot be null or empty.", nameof(headerName));
+            }
+
+            HeaderName = headerName;
+            Value = value ?? throw new ArgumentNullException(nameof(value));
             Append = append;
             Always = always;
         }
@@ -30,7 +35,7 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
 
         // Assumes the response status code has been set on the HttpContext already.
         /// <inheritdoc/>
-        public override Task ApplyAsync(ResponseTrailersTransformContext context)
+        public override ValueTask ApplyAsync(ResponseTrailersTransformContext context)
         {
             if (context is null)
             {
@@ -45,20 +50,13 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
                     var value = StringValues.Concat(existingHeader, Value);
                     SetHeader(context, HeaderName, value);
                 }
-                else if (!string.IsNullOrEmpty(Value))
+                else
                 {
                     SetHeader(context, HeaderName, Value);
                 }
-                // If the given value is empty, any existing header is removed.
             }
 
-            return Task.CompletedTask;
-        }
-
-        private static bool Success(ResponseTrailersTransformContext context)
-        {
-            // TODO: How complex should this get? Compare with http://nginx.org/en/docs/http/ngx_http_headers_module.html#add_header
-            return context.HttpContext.Response.StatusCode < 400;
+            return default;
         }
     }
 }

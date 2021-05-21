@@ -1,9 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+using System;
 using System.Threading.Tasks;
 
-namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
+namespace Yarp.ReverseProxy.Service.RuntimeModel.Transforms
 {
     /// <summary>
     /// A request transform that removes the given query parameter.
@@ -12,13 +13,18 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
     {
         public QueryParameterRemoveTransform(string key)
         {
+            if (string.IsNullOrEmpty(key))
+            {
+                throw new ArgumentException($"'{nameof(key)}' cannot be null or empty.", nameof(key));
+            }
+
             Key = key;
         }
 
         internal string Key { get; }
 
         /// <inheritdoc/>
-        public override Task ApplyAsync(RequestTransformContext context)
+        public override ValueTask ApplyAsync(RequestTransformContext context)
         {
             if (context == null)
             {
@@ -27,7 +33,7 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
 
             context.Query.Collection.Remove(Key);
 
-            return Task.CompletedTask;
+            return default;
         }
     }
 }

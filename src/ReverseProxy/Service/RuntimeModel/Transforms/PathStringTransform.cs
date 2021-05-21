@@ -5,7 +5,7 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 
-namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
+namespace Yarp.ReverseProxy.Service.RuntimeModel.Transforms
 {
     /// <summary>
     /// Modifies the proxy request Path with the given value.
@@ -19,6 +19,11 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
         /// <param name="value">The path value used to update the existing value.</param>
         public PathStringTransform(PathTransformMode mode, PathString value)
         {
+            if (value.Value == null)
+            {
+                throw new ArgumentNullException(nameof(value));
+            }
+
             Mode = mode;
             Value = value;
         }
@@ -28,7 +33,7 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
         internal PathTransformMode Mode { get; }
 
         /// <inheritdoc/>
-        public override Task ApplyAsync(RequestTransformContext context)
+        public override ValueTask ApplyAsync(RequestTransformContext context)
         {
             if (context is null)
             {
@@ -50,7 +55,7 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
                     throw new NotImplementedException(Mode.ToString());
             }
 
-            return Task.CompletedTask;
+            return default;
         }
 
         public enum PathTransformMode

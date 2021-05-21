@@ -2,23 +2,24 @@
 // Licensed under the MIT License.
 
 using System;
+using System.Net.Http;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using Microsoft.ReverseProxy.Abstractions;
-using Microsoft.ReverseProxy.RuntimeModel;
-using Microsoft.ReverseProxy.Service.Management;
-using Microsoft.ReverseProxy.Utilities;
 using Moq;
 using Xunit;
+using Yarp.ReverseProxy.Abstractions;
+using Yarp.ReverseProxy.RuntimeModel;
+using Yarp.ReverseProxy.Service.Management;
+using Yarp.ReverseProxy.Utilities;
 
-namespace Microsoft.ReverseProxy.Service.HealthChecks
+namespace Yarp.ReverseProxy.Service.HealthChecks
 {
     public class DestinationHealthUpdaterTests
     {
         [Fact]
         public async Task SetPassiveAsync_DestinationBecameUnhealthy_SetUnhealthyAndScheduleReactivation()
         {
-            var destination = new DestinationInfo("destination0");
+            var destination = new DestinationState("destination0");
             destination.Health.Active = DestinationHealth.Healthy;
             destination.Health.Passive = DestinationHealth.Healthy;
             var cluster = CreateCluster(passive: true, active: false, destination);
@@ -44,7 +45,7 @@ namespace Microsoft.ReverseProxy.Service.HealthChecks
         [Fact]
         public async Task SetPassiveAsync_DestinationBecameHealthy_SetNewState()
         {
-            var destination = new DestinationInfo("destination0");
+            var destination = new DestinationState("destination0");
             destination.Health.Active = DestinationHealth.Healthy;
             destination.Health.Passive = DestinationHealth.Unhealthy;
             var cluster = CreateCluster(passive: true, active: false, destination);
@@ -66,7 +67,7 @@ namespace Microsoft.ReverseProxy.Service.HealthChecks
         [InlineData(DestinationHealth.Unknown)]
         public async Task SetPassiveAsync_HealthSateIsNotChanged_DoNothing(DestinationHealth health)
         {
-            var destination = new DestinationInfo("destination0");
+            var destination = new DestinationState("destination0");
             destination.Health.Active = DestinationHealth.Healthy;
             destination.Health.Passive = health;
             var cluster = CreateCluster(passive: true, active: false, destination);
@@ -83,16 +84,16 @@ namespace Microsoft.ReverseProxy.Service.HealthChecks
         [Fact]
         public void SetActive_ChangedAndUnchangedHealthStates_SetChangedStates()
         {
-            var destination0 = new DestinationInfo("destination0");
+            var destination0 = new DestinationState("destination0");
             destination0.Health.Active = DestinationHealth.Healthy;
             destination0.Health.Passive = DestinationHealth.Healthy;
-            var destination1 = new DestinationInfo("destination1");
+            var destination1 = new DestinationState("destination1");
             destination1.Health.Active = DestinationHealth.Healthy;
             destination1.Health.Passive = DestinationHealth.Healthy;
-            var destination2 = new DestinationInfo("destination2");
+            var destination2 = new DestinationState("destination2");
             destination2.Health.Active = DestinationHealth.Unhealthy;
             destination2.Health.Passive = DestinationHealth.Healthy;
-            var destination3 = new DestinationInfo("destination3");
+            var destination3 = new DestinationState("destination3");
             destination3.Health.Active = DestinationHealth.Unhealthy;
             destination3.Health.Passive = DestinationHealth.Healthy;
             var cluster = CreateCluster(passive: false, active: true, destination0, destination1, destination2, destination3);
@@ -115,30 +116,36 @@ namespace Microsoft.ReverseProxy.Service.HealthChecks
             Assert.Contains(cluster.DynamicState.HealthyDestinations, d => d == destination3);
         }
 
-        private static ClusterInfo CreateCluster(bool passive, bool active, params DestinationInfo[] destinations)
+        private static ClusterState CreateCluster(bool passive, bool active, params DestinationState[] destinations)
         {
-            var destinationManager = new Mock<IDestinationManager>();
-            destinationManager.SetupGet(m => m.Items).Returns(destinations);
-            var cluster = new ClusterInfo("cluster0", destinationManager.Object);
-            cluster.Config = new ClusterConfig(
-                new Cluster
+            var cluster = new ClusterState("cluster0");
+            cluster.Model = new ClusterModel(
+                new ClusterConfig
                 {
-                    Id = cluster.ClusterId,
-                    HealthCheck = new HealthCheckOptions()
+                    ClusterId = cluster.ClusterId,
+                    HealthCheck = new HealthCheckConfig()
                     {
-                        Passive = new PassiveHealthCheckOptions()
+                        Passive = new PassiveHealthCheckConfig()
                         {
                             Policy = "policy0",
                             Enabled = passive,
                         },
-                        Active = new ActiveHealthCheckOptions()
+                        Active = new ActiveHealthCheckConfig()
                         {
                             Enabled = active,
                             Policy = "policy1",
                         },
                     },
                 },
-                default);
+                new HttpMessageInvoker(new HttpClientHandler()));
+
+            foreach (var destination in destinations)
+            {
+                cluster.Destinations.TryAdd(destination.DestinationId, destination);
+            }
+
+            cluster.ProcessDestinationChanges();
+
             return cluster;
         }
     }

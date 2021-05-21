@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.Extensions.Primitives;
 
-namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
+namespace Yarp.ReverseProxy.Service.RuntimeModel.Transforms
 {
     /// <summary>
     /// Transform state for use with <see cref="RequestTransform"/>
@@ -17,7 +17,7 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
     {
         private readonly HttpRequest _request;
         private readonly QueryString _originalQueryString;
-        private Dictionary<string, StringValues> _modifiedQueryParameters;
+        private Dictionary<string, StringValues>? _modifiedQueryParameters;
 
         public QueryTransformContext(HttpRequest request)
         {
@@ -35,7 +35,7 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
                     return _originalQueryString;
                 }
 
-#if NET5_0
+#if NET
                 var queryBuilder = new QueryBuilder(_modifiedQueryParameters);
 #elif NETCOREAPP3_1
                 var queryBuilder = new QueryBuilder(_modifiedQueryParameters.SelectMany(kvp => kvp.Value, (kvp, v) => KeyValuePair.Create(kvp.Key, v)));

@@ -7,12 +7,11 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
-using Microsoft.ReverseProxy.Abstractions;
-using Microsoft.ReverseProxy.RuntimeModel;
-using Microsoft.ReverseProxy.Service.Proxy;
-using Microsoft.ReverseProxy.Utilities;
+using Yarp.ReverseProxy.RuntimeModel;
+using Yarp.ReverseProxy.Service.Proxy;
+using Yarp.ReverseProxy.Utilities;
 
-namespace Microsoft.ReverseProxy.Service.HealthChecks
+namespace Yarp.ReverseProxy.Service.HealthChecks
 {
     /// <summary>
     /// Calculates the proxied requests failure rate for each destination and marks it as unhealthy if the specified limit is exceeded.
@@ -24,14 +23,14 @@ namespace Microsoft.ReverseProxy.Service.HealthChecks
     /// to enable a fast calculation of the current failure rate. When a new proxied request is reported, its status firstly affects those 2 aggregated counters and then also gets put
     /// in the record history. Once some record moves out of the detection time window, the failed and total counter deltas stored on it get subtracted from the respective aggregated counters.
     /// </remarks>
-    internal class TransportFailureRateHealthPolicy : IPassiveHealthCheckPolicy
+    internal sealed class TransportFailureRateHealthPolicy : IPassiveHealthCheckPolicy
     {
         private static readonly TimeSpan _defaultReactivationPeriod = TimeSpan.FromSeconds(60);
         private readonly IDestinationHealthUpdater _healthUpdater;
         private readonly TransportFailureRateHealthPolicyOptions _policyOptions;
         private readonly IClock _clock;
-        private readonly ConditionalWeakTable<ClusterInfo, ParsedMetadataEntry<double>> _clusterFailureRateLimits = new ConditionalWeakTable<ClusterInfo, ParsedMetadataEntry<double>>();
-        private readonly ConditionalWeakTable<DestinationInfo, ProxiedRequestHistory> _requestHistories = new ConditionalWeakTable<DestinationInfo, ProxiedRequestHistory>();
+        private readonly ConditionalWeakTable<ClusterState, ParsedMetadataEntry<double>> _clusterFailureRateLimits = new ConditionalWeakTable<ClusterState, ParsedMetadataEntry<double>>();
+        private readonly ConditionalWeakTable<DestinationState, ProxiedRequestHistory> _requestHistories = new ConditionalWeakTable<DestinationState, ProxiedRequestHistory>();
 
         public string Name => HealthCheckConstants.PassivePolicy.TransportFailureRate;
 
@@ -45,15 +44,15 @@ namespace Microsoft.ReverseProxy.Service.HealthChecks
             _healthUpdater = healthUpdater ?? throw new ArgumentNullException(nameof(healthUpdater));
         }
 
-        public void RequestProxied(ClusterInfo cluster, DestinationInfo destination, HttpContext context)
+        public void RequestProxied(ClusterState cluster, DestinationState destination, HttpContext context)
         {
             var error = context.Features.Get<IProxyErrorFeature>();
             var newHealth = EvaluateProxiedRequest(cluster, destination, error != null);
-            var reactivationPeriod = cluster.Config.Options.HealthCheck.Passive.ReactivationPeriod ?? _defaultReactivationPeriod;
+            var reactivationPeriod = cluster.Model.Config.HealthCheck?.Passive?.ReactivationPeriod ?? _defaultReactivationPeriod;
             _healthUpdater.SetPassive(cluster, destination, newHealth, reactivationPeriod);
         }
 
-        private DestinationHealth EvaluateProxiedRequest(ClusterInfo cluster, DestinationInfo destination, bool failed)
+        private DestinationHealth EvaluateProxiedRequest(ClusterState cluster, DestinationState destination, bool failed)
         {
             var history = _requestHistories.GetOrCreateValue(destination);
             var rateLimitEntry = _clusterFailureRateLimits.GetValue(cluster, c => new ParsedMetadataEntry<double>(TryParse, c, TransportFailureRateHealthPolicyOptions.FailureRateLimitMetadataName));

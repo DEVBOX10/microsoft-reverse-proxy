@@ -3,47 +3,25 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Diagnostics.Tracing;
 using System.Net.Sockets;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace Microsoft.ReverseProxy.Telemetry.Consumption
+namespace Yarp.ReverseProxy.Telemetry.Consumption
 {
-    internal sealed class SocketsEventListenerService : EventListener, IHostedService
+    internal sealed class SocketsEventListenerService : EventListenerService<SocketsEventListenerService, ISocketsTelemetryConsumer, ISocketsMetricsConsumer>
     {
-        private readonly ILogger<SocketsEventListenerService> _logger;
-        private readonly IServiceProvider _serviceProvider;
-        private readonly IHttpContextAccessor _httpContextAccessor;
-
-        private SocketsMetrics _previousMetrics;
+        private SocketsMetrics? _previousMetrics;
         private SocketsMetrics _currentMetrics = new();
         private int _eventCountersCount;
 
-        public SocketsEventListenerService(ILogger<SocketsEventListenerService> logger, IServiceProvider serviceProvider, IHttpContextAccessor httpContextAccessor)
-        {
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
-            _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
-        }
+        protected override string EventSourceName => "System.Net.Sockets";
 
-        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-        protected override void OnEventSourceCreated(EventSource eventSource)
-        {
-            if (eventSource.Name == "System.Net.Sockets")
-            {
-                var arguments = new Dictionary<string, string> { { "EventCounterIntervalSec", MetricsOptions.Interval.TotalSeconds.ToString() } };
-                EnableEvents(eventSource, EventLevel.LogAlways, EventKeywords.None, arguments);
-            }
-        }
+        public SocketsEventListenerService(ILogger<SocketsEventListenerService> logger, IEnumerable<ISocketsTelemetryConsumer> telemetryConsumers, IEnumerable<ISocketsMetricsConsumer> metricsConsumers)
+            : base(logger, telemetryConsumers, metricsConsumers)
+        { }
 
         protected override void OnEventWritten(EventWrittenEventArgs eventData)
         {
@@ -60,20 +38,15 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
                 return;
             }
 
-            var context = _httpContextAccessor?.HttpContext;
-            if (context is null)
+            if (TelemetryConsumers is null)
             {
                 return;
             }
 
-            using var consumers = context.RequestServices.GetServices<ISocketsTelemetryConsumer>().GetEnumerator();
-
-            if (!consumers.MoveNext())
-            {
-                return;
-            }
-
-            var payload = eventData.Payload;
+#pragma warning disable IDE0007 // Use implicit type
+            // Explicit type here to drop the object? signature of payload elements
+            ReadOnlyCollection<object> payload = eventData.Payload!;
+#pragma warning restore IDE0007 // Use implicit type
 
             switch (eventData.EventId)
             {
@@ -81,22 +54,20 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
                     Debug.Assert(eventData.EventName == "ConnectStart" && payload.Count == 1);
                     {
                         var address = (string)payload[0];
-                        do
+                        foreach (var consumer in TelemetryConsumers)
                         {
-                            consumers.Current.OnConnectStart(eventData.TimeStamp, address);
+                            consumer.OnConnectStart(eventData.TimeStamp, address);
                         }
-                        while (consumers.MoveNext());
                     }
                     break;
 
                 case 2:
                     Debug.Assert(eventData.EventName == "ConnectStop" && payload.Count == 0);
                     {
-                        do
+                        foreach (var consumer in TelemetryConsumers)
                         {
-                            consumers.Current.OnConnectStop(eventData.TimeStamp);
+                            consumer.OnConnectStop(eventData.TimeStamp);
                         }
-                        while (consumers.MoveNext());
                     }
                     break;
 
@@ -105,11 +76,10 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
                     {
                         var error = (SocketError)payload[0];
                         var exceptionMessage = (string)payload[1];
-                        do
+                        foreach (var consumer in TelemetryConsumers)
                         {
-                            consumers.Current.OnConnectFailed(eventData.TimeStamp, error, exceptionMessage);
+                            consumer.OnConnectFailed(eventData.TimeStamp, error, exceptionMessage);
                         }
-                        while (consumers.MoveNext());
                     }
                     break;
             }
@@ -117,8 +87,13 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
 
         private void OnEventCounters(EventWrittenEventArgs eventData)
         {
-            Debug.Assert(eventData.EventName == "EventCounters" && eventData.Payload.Count == 1);
-            var counters = (IDictionary<string, object>)eventData.Payload[0];
+            if (MetricsConsumers is null)
+            {
+                return;
+            }
+
+            Debug.Assert(eventData.EventName == "EventCounters" && eventData.Payload!.Count == 1);
+            var counters = (IDictionary<string, object>)eventData.Payload[0]!;
 
             if (!counters.TryGetValue("Mean", out var valueObj))
             {
@@ -170,14 +145,14 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
                 _previousMetrics = metrics;
                 _currentMetrics = new SocketsMetrics();
 
-                if (previous is null || _serviceProvider is null)
+                if (previous is null)
                 {
                     return;
                 }
 
                 try
                 {
-                    foreach (var consumer in _serviceProvider.GetServices<ISocketsMetricsConsumer>())
+                    foreach (var consumer in MetricsConsumers)
                     {
                         consumer.OnSocketsMetrics(previous, metrics);
                     }
@@ -185,7 +160,7 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
                 catch (Exception ex)
                 {
                     // We can't let an uncaught exception propagate as that would crash the process
-                    _logger.LogError(ex, $"Uncaught exception occured while processing {nameof(SocketsMetrics)}.");
+                    Logger.LogError(ex, $"Uncaught exception occured while processing {nameof(SocketsMetrics)}.");
                 }
             }
         }

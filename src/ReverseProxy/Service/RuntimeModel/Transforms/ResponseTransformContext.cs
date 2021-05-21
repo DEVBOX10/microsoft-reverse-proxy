@@ -4,7 +4,7 @@
 using System.Net.Http;
 using Microsoft.AspNetCore.Http;
 
-namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
+namespace Yarp.ReverseProxy.Service.RuntimeModel.Transforms
 {
     /// <summary>
     /// Transform state for use with <see cref="ResponseTransform"/>
@@ -14,12 +14,12 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
         /// <summary>
         /// The current request context.
         /// </summary>
-        public HttpContext HttpContext { get; init; }
+        public HttpContext HttpContext { get; init; } = default!;
 
         /// <summary>
         /// The incoming proxy response.
         /// </summary>
-        public HttpResponseMessage ProxyResponse { get; init; }
+        public HttpResponseMessage ProxyResponse { get; init; } = default!;
 
         /// <summary>
         /// Gets or sets if the response headers have been copied from the HttpResponseMessage and HttpContent
@@ -27,5 +27,11 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
         /// should operate on.
         /// </summary>
         public bool HeadersCopied { get; set; }
+
+        /// <summary>
+        /// Set to true if the proxy should exclude the body and trailing headers when proxying this response.
+        /// Defaults to false.
+        /// </summary>
+        public bool SuppressResponseBody { get; set; }
     }
 }

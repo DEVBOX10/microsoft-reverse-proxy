@@ -6,16 +6,14 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
-using Microsoft.ReverseProxy.Abstractions;
-using Microsoft.ReverseProxy.Abstractions.ClusterDiscovery.Contract;
-using Microsoft.ReverseProxy.RuntimeModel;
+using Yarp.ReverseProxy.Abstractions;
+using Yarp.ReverseProxy.RuntimeModel;
 
-namespace Microsoft.ReverseProxy.Service.SessionAffinity
+namespace Yarp.ReverseProxy.Service.SessionAffinity
 {
-    internal class CustomHeaderSessionAffinityProvider : BaseSessionAffinityProvider<string>
+    internal sealed class CustomHeaderSessionAffinityProvider : BaseSessionAffinityProvider<string>
     {
-        public static readonly string DefaultCustomHeaderName = "X-Microsoft-Proxy-Affinity";
-        private const string CustomHeaderNameKey = "CustomHeaderName";
+        public static readonly string DefaultCustomHeaderName = "X-Yarp-Proxy-Affinity";
 
         public CustomHeaderSessionAffinityProvider(
             IDataProtectionProvider dataProtectionProvider,
@@ -25,14 +23,14 @@ namespace Microsoft.ReverseProxy.Service.SessionAffinity
 
         public override string Mode => SessionAffinityConstants.Modes.CustomHeader;
 
-        protected override string GetDestinationAffinityKey(DestinationInfo destination)
+        protected override string GetDestinationAffinityKey(DestinationState destination)
         {
             return destination.DestinationId;
         }
 
-        protected override (string Key, bool ExtractedSuccessfully) GetRequestAffinityKey(HttpContext context, SessionAffinityOptions options)
+        protected override (string? Key, bool ExtractedSuccessfully) GetRequestAffinityKey(HttpContext context, SessionAffinityConfig config)
         {
-            var customHeaderName = options.Settings != null && options.Settings.TryGetValue(CustomHeaderNameKey, out var nameInSettings) ? nameInSettings : DefaultCustomHeaderName;
+            var customHeaderName = config.AffinityKeyName ?? DefaultCustomHeaderName;
             var keyHeaderValues = context.Request.Headers[customHeaderName];
 
             if (StringValues.IsNullOrEmpty(keyHeaderValues))
@@ -51,15 +49,14 @@ namespace Microsoft.ReverseProxy.Service.SessionAffinity
             return Unprotect(keyHeaderValues[0]);
         }
 
-        protected override void SetAffinityKey(HttpContext context, SessionAffinityOptions options, string unencryptedKey)
+        protected override void SetAffinityKey(HttpContext context, SessionAffinityConfig config, string unencryptedKey)
         {
-            var customHeaderName = GetSettingValue(CustomHeaderNameKey, options);
-            context.Response.Headers.Append(customHeaderName, Protect(unencryptedKey));
+            context.Response.Headers.Append(config.AffinityKeyName ?? DefaultCustomHeaderName, Protect(unencryptedKey));
         }
 
         private static class Log
         {
-            private static readonly Action<ILogger, string, int, Exception> _requestAffinityHeaderHasMultipleValues = LoggerMessage.Define<string, int>(
+            private static readonly Action<ILogger, string, int, Exception?> _requestAffinityHeaderHasMultipleValues = LoggerMessage.Define<string, int>(
                 LogLevel.Error,
                 EventIds.RequestAffinityHeaderHasMultipleValues,
                 "The request affinity header `{headerName}` has `{valueCount}` values.");

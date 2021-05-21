@@ -7,15 +7,16 @@ using System.Linq;
 using System.Net.Http;
 using System.Reflection;
 using System.Security.Authentication;
+using System.Text;
 using Microsoft.Extensions.Logging;
-using Microsoft.ReverseProxy.Abstractions;
-using Microsoft.ReverseProxy.Common.Tests;
-using Microsoft.ReverseProxy.Service.Proxy.Infrastructure;
-using Microsoft.ReverseProxy.Telemetry;
-using Microsoft.ReverseProxy.Utilities.Tests;
 using Xunit;
+using Yarp.ReverseProxy.Abstractions;
+using Yarp.ReverseProxy.Common.Tests;
+using Yarp.ReverseProxy.Service.Proxy.Infrastructure;
+using Yarp.ReverseProxy.Telemetry;
+using Yarp.ReverseProxy.Utilities.Tests;
 
-namespace Microsoft.ReverseProxy.Service.Proxy.Tests
+namespace Yarp.ReverseProxy.Service.Proxy.Tests
 {
     public class ProxyHttpClientFactoryTests : TestAutoMockBase
     {
@@ -32,13 +33,13 @@ namespace Microsoft.ReverseProxy.Service.Proxy.Tests
 
             var actual1 = factory.CreateClient(new ProxyHttpClientContext()
             {
-                NewOptions = ProxyHttpClientOptions.Empty,
-                OldOptions = ProxyHttpClientOptions.Empty
+                NewConfig = HttpClientConfig.Empty,
+                OldConfig = HttpClientConfig.Empty
             });
             var actual2 = factory.CreateClient(new ProxyHttpClientContext()
             {
-                NewOptions = ProxyHttpClientOptions.Empty,
-                OldOptions = ProxyHttpClientOptions.Empty
+                NewConfig = HttpClientConfig.Empty,
+                OldConfig = HttpClientConfig.Empty
             });
 
             Assert.NotNull(actual1);
@@ -50,11 +51,11 @@ namespace Microsoft.ReverseProxy.Service.Proxy.Tests
         public void CreateClient_ApplySslProtocols_Success()
         {
             var factory = new ProxyHttpClientFactory(Mock<ILogger<ProxyHttpClientFactory>>().Object);
-            var options = new ProxyHttpClientOptions
+            var options = new HttpClientConfig
             {
-                SslProtocols =  SslProtocols.Tls12 | SslProtocols.Tls13,
+                SslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
             };
-            var client = factory.CreateClient(new ProxyHttpClientContext { NewOptions = options });
+            var client = factory.CreateClient(new ProxyHttpClientContext { NewConfig = options });
 
             var handler = GetHandler(client);
 
@@ -67,8 +68,8 @@ namespace Microsoft.ReverseProxy.Service.Proxy.Tests
         public void CreateClient_ApplyDangerousAcceptAnyServerCertificate_Success()
         {
             var factory = new ProxyHttpClientFactory(Mock<ILogger<ProxyHttpClientFactory>>().Object);
-            var options = new ProxyHttpClientOptions { DangerousAcceptAnyServerCertificate = true };
-            var client = factory.CreateClient(new ProxyHttpClientContext { NewOptions = options });
+            var options = new HttpClientConfig { DangerousAcceptAnyServerCertificate = true };
+            var client = factory.CreateClient(new ProxyHttpClientContext { NewConfig = options });
 
             var handler = GetHandler(client);
 
@@ -79,27 +80,11 @@ namespace Microsoft.ReverseProxy.Service.Proxy.Tests
         }
 
         [Fact]
-        public void CreateClient_ApplyClientCertificate_Success()
-        {
-            var factory = new ProxyHttpClientFactory(Mock<ILogger<ProxyHttpClientFactory>>().Object);
-            var certificate = TestResources.GetTestCertificate();
-            var options = new ProxyHttpClientOptions { ClientCertificate = certificate };
-            var client = factory.CreateClient(new ProxyHttpClientContext { NewOptions = options });
-
-            var handler = GetHandler(client);
-
-            Assert.NotNull(handler);
-            Assert.Single(handler.SslOptions.ClientCertificates);
-            Assert.Single(handler.SslOptions.ClientCertificates, certificate);
-            VerifyDefaultValues(handler, "ClientCertificate");
-        }
-
-        [Fact]
         public void CreateClient_ApplyMaxConnectionsPerServer_Success()
         {
             var factory = new ProxyHttpClientFactory(Mock<ILogger<ProxyHttpClientFactory>>().Object);
-            var options = new ProxyHttpClientOptions { MaxConnectionsPerServer = 22 };
-            var client = factory.CreateClient(new ProxyHttpClientContext { NewOptions = options });
+            var options = new HttpClientConfig { MaxConnectionsPerServer = 22 };
+            var client = factory.CreateClient(new ProxyHttpClientContext { NewConfig = options });
 
             var handler = GetHandler(client);
 
@@ -112,8 +97,8 @@ namespace Microsoft.ReverseProxy.Service.Proxy.Tests
         public void CreateClient_ApplyPropagateActivityContext_Success()
         {
             var factory = new ProxyHttpClientFactory(Mock<ILogger<ProxyHttpClientFactory>>().Object);
-            var options = new ProxyHttpClientOptions { PropagateActivityContext = false };
-            var client = factory.CreateClient(new ProxyHttpClientContext { NewOptions = options });
+            var options = new HttpClientConfig { ActivityContextHeaders = ActivityContextHeaders.None };
+            var client = factory.CreateClient(new ProxyHttpClientContext { NewConfig = options });
 
             var handler = GetHandler(client, expectActivityPropagationHandler: false);
 
@@ -121,23 +106,65 @@ namespace Microsoft.ReverseProxy.Service.Proxy.Tests
         }
 
         [Fact]
+        public void CreateClient_ApplyWebProxy_Success()
+        {
+            var factory = new ProxyHttpClientFactory(Mock<ILogger<ProxyHttpClientFactory>>().Object);
+            var options = new HttpClientConfig {
+                WebProxy = new WebProxyConfig() {
+                    Address = new Uri("http://localhost:8080"),
+                    BypassOnLocal = true,
+                    UseDefaultCredentials = true
+                }
+            };
+            var client = factory.CreateClient(new ProxyHttpClientContext { NewConfig = options });
+
+            var handler = GetHandler(client);
+
+            Assert.NotNull(handler);
+            Assert.NotNull(handler.Proxy);
+            Assert.True(handler.UseProxy);
+            VerifyDefaultValues(handler, "WebProxy");
+        }
+
+#if NET
+        [Fact]
+        public void CreateClient_ApplyRequestHeaderEncoding_Success()
+        {
+            var factory = new ProxyHttpClientFactory(Mock<ILogger<ProxyHttpClientFactory>>().Object);
+            var options = new HttpClientConfig
+            {
+                RequestHeaderEncoding = Encoding.Latin1.WebName
+            };
+            var client = factory.CreateClient(new ProxyHttpClientContext { NewConfig = options });
+
+            var handler = GetHandler(client);
+
+            Assert.NotNull(handler);
+            Assert.NotNull(handler.RequestHeaderEncodingSelector);
+            Assert.Equal(Encoding.Latin1, handler.RequestHeaderEncodingSelector(default, default));
+            VerifyDefaultValues(handler, nameof(SocketsHttpHandler.RequestHeaderEncodingSelector));
+        }
+#endif
+
+        [Fact]
         public void CreateClient_OldClientExistsNoConfigChange_ReturnsOldInstance()
         {
             var factory = new ProxyHttpClientFactory(Mock<ILogger<ProxyHttpClientFactory>>().Object);
             var oldClient = new HttpMessageInvoker(new SocketsHttpHandler());
-            var clientCertificate = TestResources.GetTestCertificate();
-            var oldOptions = new ProxyHttpClientOptions
+            var oldOptions = new HttpClientConfig
             {
                 SslProtocols = SslProtocols.Tls11 | SslProtocols.Tls12,
                 DangerousAcceptAnyServerCertificate = true,
-                ClientCertificate = clientCertificate,
                 MaxConnectionsPerServer = 10,
-                PropagateActivityContext = true,
+                ActivityContextHeaders = ActivityContextHeaders.CorrelationContext,
+#if NET
+                RequestHeaderEncoding = Encoding.Latin1.WebName,
+#endif
             };
             var newOptions = oldOptions with { }; // Clone
             var oldMetadata = new Dictionary<string, string> { { "key1", "value1" }, { "key2", "value2" } };
             var newMetadata = new Dictionary<string, string> { { "key1", "value1" }, { "key2", "value2" } };
-            var context = new ProxyHttpClientContext { ClusterId = "cluster1", OldOptions = oldOptions, OldMetadata = oldMetadata, OldClient = oldClient, NewOptions = newOptions, NewMetadata = newMetadata };
+            var context = new ProxyHttpClientContext { ClusterId = "cluster1", OldConfig = oldOptions, OldMetadata = oldMetadata, OldClient = oldClient, NewConfig = newOptions, NewMetadata = newMetadata };
 
             var actualClient = factory.CreateClient(context);
 
@@ -145,13 +172,29 @@ namespace Microsoft.ReverseProxy.Service.Proxy.Tests
             Assert.Same(oldClient, actualClient);
         }
 
+#if NET
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public void CreateClient_ApplyEnableMultipleHttp2Connections_Success(bool enableMultipleHttp2Connections)
+        {
+            var factory = new ProxyHttpClientFactory(Mock<ILogger<ProxyHttpClientFactory>>().Object);
+            var options = new HttpClientConfig {  EnableMultipleHttp2Connections = enableMultipleHttp2Connections };
+            var client = factory.CreateClient(new ProxyHttpClientContext { NewConfig = options });
+
+            var handler = GetHandler(client);
+
+            Assert.Equal(enableMultipleHttp2Connections, handler.EnableMultipleHttp2Connections);
+        }
+#endif
+
         [Theory]
         [MemberData(nameof(GetChangedHttpClientOptions))]
-        public void CreateClient_OldClientExistsHttpClientOptionsChanged_ReturnsNewInstance(ProxyHttpClientOptions oldOptions, ProxyHttpClientOptions newOptions)
+        public void CreateClient_OldClientExistsHttpClientOptionsChanged_ReturnsNewInstance(HttpClientConfig oldOptions, HttpClientConfig newOptions)
         {
             var factory = new ProxyHttpClientFactory(Mock<ILogger<ProxyHttpClientFactory>>().Object);
             var oldClient = new HttpMessageInvoker(new SocketsHttpHandler());
-            var context = new ProxyHttpClientContext { ClusterId = "cluster1", OldOptions = oldOptions, OldClient = oldClient, NewOptions = newOptions };
+            var context = new ProxyHttpClientContext { ClusterId = "cluster1", OldConfig = oldOptions, OldClient = oldClient, NewConfig = newOptions };
 
             var actualClient = factory.CreateClient(context);
 
@@ -161,153 +204,223 @@ namespace Microsoft.ReverseProxy.Service.Proxy.Tests
 
         public static IEnumerable<object[]> GetChangedHttpClientOptions()
         {
-            var clientCertificate = TestResources.GetTestCertificate();
             return new[]
             {
                 new object[] {
-                    new ProxyHttpClientOptions
+                    new HttpClientConfig
                     {
                         SslProtocols = SslProtocols.Tls11,
                         DangerousAcceptAnyServerCertificate = true,
-                        ClientCertificate = clientCertificate,
                         MaxConnectionsPerServer = null,
-                        PropagateActivityContext = false,
+                        ActivityContextHeaders = ActivityContextHeaders.None,
                     },
-                    new ProxyHttpClientOptions
+                    new HttpClientConfig
                     {
                         SslProtocols = SslProtocols.Tls11 | SslProtocols.Tls12,
                         DangerousAcceptAnyServerCertificate = true,
-                        ClientCertificate = clientCertificate,
                         MaxConnectionsPerServer = null,
-                        PropagateActivityContext = false,
+                        ActivityContextHeaders = ActivityContextHeaders.None,
                     },
                 },
                 new object[] {
-                    new ProxyHttpClientOptions
+                    new HttpClientConfig
                     {
                         SslProtocols = SslProtocols.Tls11,
                         DangerousAcceptAnyServerCertificate = true,
-                        ClientCertificate = clientCertificate,
                         MaxConnectionsPerServer = null,
-                        PropagateActivityContext = false,
+                        ActivityContextHeaders = ActivityContextHeaders.None,
                     },
-                    new ProxyHttpClientOptions
+                    new HttpClientConfig
                     {
                         SslProtocols = SslProtocols.Tls11,
                         DangerousAcceptAnyServerCertificate = false,
-                        ClientCertificate = clientCertificate,
                         MaxConnectionsPerServer = null,
-                        PropagateActivityContext = false,
+                        ActivityContextHeaders = ActivityContextHeaders.None,
                     },
                 },
                 new object[] {
-                    new ProxyHttpClientOptions
+                    new HttpClientConfig
                     {
                         SslProtocols = SslProtocols.Tls11,
                         DangerousAcceptAnyServerCertificate = true,
-                        ClientCertificate = clientCertificate,
                         MaxConnectionsPerServer = null,
-                        PropagateActivityContext = false,
+                        ActivityContextHeaders = ActivityContextHeaders.None,
                     },
-                    new ProxyHttpClientOptions
+                    new HttpClientConfig
                     {
                         SslProtocols = SslProtocols.Tls11,
                         DangerousAcceptAnyServerCertificate = false,
-                        ClientCertificate = null,
                         MaxConnectionsPerServer = null,
-                        PropagateActivityContext = false,
+                        ActivityContextHeaders = ActivityContextHeaders.None,
                     },
                 },
                 new object[] {
-                    new ProxyHttpClientOptions
+                    new HttpClientConfig
                     {
                         SslProtocols = SslProtocols.Tls11,
                         DangerousAcceptAnyServerCertificate = true,
-                        ClientCertificate = null,
                         MaxConnectionsPerServer = null,
-                        PropagateActivityContext = false,
+                        ActivityContextHeaders = ActivityContextHeaders.None,
                     },
-                    new ProxyHttpClientOptions
+                    new HttpClientConfig
                     {
                         SslProtocols = SslProtocols.Tls11,
                         DangerousAcceptAnyServerCertificate = false,
-                        ClientCertificate = clientCertificate,
                         MaxConnectionsPerServer = null,
-                        PropagateActivityContext = false,
+                        ActivityContextHeaders = ActivityContextHeaders.None,
                     },
                 },
                 new object[] {
-                    new ProxyHttpClientOptions
+                    new HttpClientConfig
                     {
                         SslProtocols = SslProtocols.Tls11,
                         DangerousAcceptAnyServerCertificate = true,
-                        ClientCertificate = null,
                         MaxConnectionsPerServer = null,
-                        PropagateActivityContext = false,
+                        ActivityContextHeaders = ActivityContextHeaders.None,
                     },
-                    new ProxyHttpClientOptions
+                    new HttpClientConfig
                     {
                         SslProtocols = SslProtocols.Tls11,
                         DangerousAcceptAnyServerCertificate = true,
-                        ClientCertificate = clientCertificate,
                         MaxConnectionsPerServer = 10,
-                        PropagateActivityContext = false,
+                        ActivityContextHeaders = ActivityContextHeaders.None,
                     },
                 },
                 new object[] {
-                    new ProxyHttpClientOptions
+                    new HttpClientConfig
                     {
                         SslProtocols = SslProtocols.Tls11,
                         DangerousAcceptAnyServerCertificate = true,
-                        ClientCertificate = null,
                         MaxConnectionsPerServer = 10,
-                        PropagateActivityContext = false,
+                        ActivityContextHeaders = ActivityContextHeaders.None,
                     },
-                    new ProxyHttpClientOptions
+                    new HttpClientConfig
                     {
                         SslProtocols = SslProtocols.Tls11,
                         DangerousAcceptAnyServerCertificate = true,
-                        ClientCertificate = clientCertificate,
                         MaxConnectionsPerServer = null,
-                        PropagateActivityContext = false,
+                        ActivityContextHeaders = ActivityContextHeaders.None,
                     },
                 },
                 new object[] {
-                    new ProxyHttpClientOptions
+                    new HttpClientConfig
                     {
                         SslProtocols = SslProtocols.Tls11,
                         DangerousAcceptAnyServerCertificate = true,
-                        ClientCertificate = null,
                         MaxConnectionsPerServer = 10,
-                        PropagateActivityContext = false,
+                        ActivityContextHeaders = ActivityContextHeaders.None,
                     },
-                    new ProxyHttpClientOptions
+                    new HttpClientConfig
                     {
                         SslProtocols = SslProtocols.Tls11,
                         DangerousAcceptAnyServerCertificate = true,
-                        ClientCertificate = clientCertificate,
                         MaxConnectionsPerServer = 20,
-                        PropagateActivityContext = false,
+                        ActivityContextHeaders = ActivityContextHeaders.None,
                     },
                 },
                 new object[] {
-                    new ProxyHttpClientOptions
+                    new HttpClientConfig
                     {
                         SslProtocols = SslProtocols.Tls11,
                         DangerousAcceptAnyServerCertificate = true,
-                        ClientCertificate = null,
                         MaxConnectionsPerServer = 10,
-                        PropagateActivityContext = true,
+                        ActivityContextHeaders = ActivityContextHeaders.CorrelationContext,
                     },
-                    new ProxyHttpClientOptions
+                    new HttpClientConfig
                     {
                         SslProtocols = SslProtocols.Tls11,
                         DangerousAcceptAnyServerCertificate = true,
-                        ClientCertificate = null,
                         MaxConnectionsPerServer = 10,
-                        PropagateActivityContext = false,
+                        ActivityContextHeaders = ActivityContextHeaders.None,
+                    },
+                },
+                new object[] {
+                    new HttpClientConfig
+                    {
+                        SslProtocols = SslProtocols.Tls11,
+                        DangerousAcceptAnyServerCertificate = true,
+                        MaxConnectionsPerServer = 10,
+                        ActivityContextHeaders = ActivityContextHeaders.Baggage,
+                    },
+                    new HttpClientConfig
+                    {
+                        SslProtocols = SslProtocols.Tls11,
+                        DangerousAcceptAnyServerCertificate = true,
+                        MaxConnectionsPerServer = 10,
+                        ActivityContextHeaders = ActivityContextHeaders.CorrelationContext,
+                    },
+                },
+                new object[] {
+                    new HttpClientConfig
+                    {
+                        SslProtocols = SslProtocols.Tls11,
+                        DangerousAcceptAnyServerCertificate = true,
+                        MaxConnectionsPerServer = 10,
+                        ActivityContextHeaders = ActivityContextHeaders.CorrelationContext,
+                    },
+                    new HttpClientConfig
+                    {
+                        SslProtocols = SslProtocols.Tls11,
+                        DangerousAcceptAnyServerCertificate = true,
+                        MaxConnectionsPerServer = 10,
+                        ActivityContextHeaders = ActivityContextHeaders.BaggageAndCorrelationContext,
+                    },
+                },
+#if NET
+                new object[] {
+                    new HttpClientConfig
+                    {
+                        SslProtocols = SslProtocols.Tls11,
+                        DangerousAcceptAnyServerCertificate = true,
+                        MaxConnectionsPerServer = 10,
+                        ActivityContextHeaders = ActivityContextHeaders.Baggage,
+                        EnableMultipleHttp2Connections = true
+                    },
+                    new HttpClientConfig
+                    {
+                        SslProtocols = SslProtocols.Tls11,
+                        DangerousAcceptAnyServerCertificate = true,
+                        MaxConnectionsPerServer = 10,
+                        ActivityContextHeaders = ActivityContextHeaders.Baggage,
+                        EnableMultipleHttp2Connections = false
+                    },
+                },
+                new object[] {
+                    new HttpClientConfig
+                    {
+                        SslProtocols = SslProtocols.Tls11,
+                        DangerousAcceptAnyServerCertificate = true,
+                        MaxConnectionsPerServer = 10,
+                        ActivityContextHeaders = ActivityContextHeaders.None,
+                    },
+                    new HttpClientConfig
+                    {
+                        SslProtocols = SslProtocols.Tls11,
+                        DangerousAcceptAnyServerCertificate = true,
+                        MaxConnectionsPerServer = 10,
+                        ActivityContextHeaders = ActivityContextHeaders.None,
+                        RequestHeaderEncoding = Encoding.UTF8.WebName,
+                    },
+                },
+                new object[] {
+                    new HttpClientConfig
+                    {
+                        SslProtocols = SslProtocols.Tls11,
+                        DangerousAcceptAnyServerCertificate = true,
+                        MaxConnectionsPerServer = 10,
+                        ActivityContextHeaders = ActivityContextHeaders.None,
+                        RequestHeaderEncoding = Encoding.UTF8.WebName,
+                    },
+                    new HttpClientConfig
+                    {
+                        SslProtocols = SslProtocols.Tls11,
+                        DangerousAcceptAnyServerCertificate = true,
+                        MaxConnectionsPerServer = 10,
+                        ActivityContextHeaders = ActivityContextHeaders.None,
+                        RequestHeaderEncoding = Encoding.Latin1.WebName,
                     },
                 }
+#endif
             };
         }
 
@@ -330,7 +443,7 @@ namespace Microsoft.ReverseProxy.Service.Proxy.Tests
         {
             var skippedSet = new HashSet<string>(skippedExtractors);
             var defaultHandler = new SocketsHttpHandler();
-            foreach(var extractor in GetAllExtractors().Where(e => !skippedSet.Contains(e.name)).Select(e => e.extractor))
+            foreach (var extractor in GetAllExtractors().Where(e => !skippedSet.Contains(e.name)).Select(e => e.extractor))
             {
                 Assert.Equal(extractor(defaultHandler), extractor(actualHandler));
             }
@@ -342,7 +455,8 @@ namespace Microsoft.ReverseProxy.Service.Proxy.Tests
                 ("SslProtocols", h => h.SslOptions.EnabledSslProtocols),
                 ("DangerousAcceptAnyServerCertificate", h => h.SslOptions.RemoteCertificateValidationCallback),
                 ("ClientCertificate", h => h.SslOptions.ClientCertificates),
-                ("MaxConnectionsPerServer", h => h.MaxConnectionsPerServer)
+                ("MaxConnectionsPerServer", h => h.MaxConnectionsPerServer),
+                ("WebProxy", h => h.Proxy)
             };
         }
     }

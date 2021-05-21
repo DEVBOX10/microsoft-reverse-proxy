@@ -3,18 +3,18 @@
 
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
-using Microsoft.ReverseProxy.Abstractions;
-using Microsoft.ReverseProxy.RuntimeModel;
-using Microsoft.ReverseProxy.Service.HealthChecks;
-using Microsoft.ReverseProxy.Service.Management;
-using Microsoft.ReverseProxy.Service.Proxy;
-using Microsoft.ReverseProxy.Service.RuntimeModel.Transforms;
 using Moq;
 using Xunit;
+using Yarp.ReverseProxy.Abstractions;
+using Yarp.ReverseProxy.RuntimeModel;
+using Yarp.ReverseProxy.Service.HealthChecks;
+using Yarp.ReverseProxy.Service.Management;
+using Yarp.ReverseProxy.Service.Proxy;
 
-namespace Microsoft.ReverseProxy.Middleware
+namespace Yarp.ReverseProxy.Middleware
 {
     public class PassiveHealthCheckMiddlewareTests
     {
@@ -85,7 +85,7 @@ namespace Microsoft.ReverseProxy.Middleware
             }, policies.Select(p => p.Object));
 
             var context0 = GetContext(cluster0, selectedDestination: 1, error: null);
-            context0.GetRequiredProxyFeature().SelectedDestination = null;
+            context0.GetReverseProxyFeature().ProxiedDestination = null;
             await middleware.Invoke(context0);
 
             Assert.True(nextInvoked);
@@ -95,12 +95,11 @@ namespace Microsoft.ReverseProxy.Middleware
             policies[1].VerifyNoOtherCalls();
         }
 
-        private HttpContext GetContext(ClusterInfo cluster, int selectedDestination, IProxyErrorFeature error)
+        private HttpContext GetContext(ClusterState cluster, int selectedDestination, IProxyErrorFeature error)
         {
             var context = new DefaultHttpContext();
-            context.Features.Set(GetProxyFeature(cluster.Config, cluster.DynamicState.AllDestinations[selectedDestination]));
+            context.Features.Set(GetProxyFeature(cluster, cluster.DynamicState.AllDestinations[selectedDestination]));
             context.Features.Set(error);
-            context.SetEndpoint(GetEndpoint(cluster));
             return context;
         }
 
@@ -111,47 +110,40 @@ namespace Microsoft.ReverseProxy.Middleware
             return policy;
         }
 
-        private IReverseProxyFeature GetProxyFeature(ClusterConfig clusterConfig, DestinationInfo destination)
+        private IReverseProxyFeature GetProxyFeature(ClusterState clusterState, DestinationState destination)
         {
-            var result = new Mock<IReverseProxyFeature>(MockBehavior.Strict);
-            result.SetupProperty(p => p.SelectedDestination, destination);
-            result.SetupProperty(p => p.ClusterConfig, clusterConfig);
-            return result.Object;
+            return new ReverseProxyFeature()
+            {
+                ProxiedDestination = destination,
+                Cluster = clusterState.Model,
+                Route = new RouteModel(new RouteConfig(), clusterState, HttpTransformer.Default),
+            };
         }
 
-        private ClusterInfo GetClusterInfo(string id, string policy, bool enabled = true)
+        private ClusterState GetClusterInfo(string id, string policy, bool enabled = true)
         {
-            var clusterConfig = new ClusterConfig(
-                new Cluster
+            var clusterModel = new ClusterModel(
+                new ClusterConfig
                 {
-                    Id = id,
-                    HealthCheck = new HealthCheckOptions
+                    ClusterId = id,
+                    HealthCheck = new HealthCheckConfig
                     {
-                        Passive = new PassiveHealthCheckOptions
+                        Passive = new PassiveHealthCheckConfig
                         {
                             Enabled = enabled,
                             Policy = policy,
                         }
                     }
                 },
-                null);
-            var clusterInfo = new ClusterInfo(id, new DestinationManager());
-            clusterInfo.Config = clusterConfig;
-            clusterInfo.DestinationManager.GetOrCreateItem("destination0", d => { });
-            clusterInfo.DestinationManager.GetOrCreateItem("destination1", d => { });
+                new HttpMessageInvoker(new HttpClientHandler()));
+            var clusterState = new ClusterState(id);
+            clusterState.Model = clusterModel;
+            clusterState.Destinations.GetOrAdd("destination0", id => new DestinationState(id));
+            clusterState.Destinations.GetOrAdd("destination1", id => new DestinationState(id));
 
-            clusterInfo.UpdateDynamicState();
+            clusterState.ProcessDestinationChanges();
 
-            return clusterInfo;
-        }
-
-        private Endpoint GetEndpoint(ClusterInfo cluster)
-        {
-            var endpoints = new List<Endpoint>(1);
-            var routeConfig = new RouteConfig(new RouteInfo("route-1"), new ProxyRoute(), cluster, HttpTransformer.Default);
-            var endpoint = new Endpoint(default, new EndpointMetadataCollection(routeConfig), string.Empty);
-            endpoints.Add(endpoint);
-            return endpoint;
+            return clusterState;
         }
     }
 }

@@ -3,47 +3,25 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Diagnostics.Tracing;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.ReverseProxy.Service.Proxy;
+using Yarp.ReverseProxy.Service.Proxy;
 
-namespace Microsoft.ReverseProxy.Telemetry.Consumption
+namespace Yarp.ReverseProxy.Telemetry.Consumption
 {
-    internal sealed class ProxyEventListenerService : EventListener, IHostedService
+    internal sealed class ProxyEventListenerService : EventListenerService<ProxyEventListenerService, IProxyTelemetryConsumer, IProxyMetricsConsumer>
     {
-        private readonly ILogger<ProxyEventListenerService> _logger;
-        private readonly IServiceProvider _serviceProvider;
-        private readonly IHttpContextAccessor _httpContextAccessor;
-
-        private ProxyMetrics _previousMetrics;
+        private ProxyMetrics? _previousMetrics;
         private ProxyMetrics _currentMetrics = new();
         private int _eventCountersCount;
 
-        public ProxyEventListenerService(ILogger<ProxyEventListenerService> logger, IServiceProvider serviceProvider, IHttpContextAccessor httpContextAccessor)
-        {
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
-            _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
-        }
+        protected override string EventSourceName => "Yarp.ReverseProxy";
 
-        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-        protected override void OnEventSourceCreated(EventSource eventSource)
-        {
-            if (eventSource.Name == "Microsoft.ReverseProxy")
-            {
-                var arguments = new Dictionary<string, string> { { "EventCounterIntervalSec", MetricsOptions.Interval.TotalSeconds.ToString() } };
-                EnableEvents(eventSource, EventLevel.LogAlways, EventKeywords.None, arguments);
-            }
-        }
+        public ProxyEventListenerService(ILogger<ProxyEventListenerService> logger, IEnumerable<IProxyTelemetryConsumer> telemetryConsumers, IEnumerable<IProxyMetricsConsumer> metricsConsumers)
+            : base(logger, telemetryConsumers, metricsConsumers)
+        { }
 
         protected override void OnEventWritten(EventWrittenEventArgs eventData)
         {
@@ -60,20 +38,15 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
                 return;
             }
 
-            var context = _httpContextAccessor?.HttpContext;
-            if (context is null)
+            if (TelemetryConsumers is null)
             {
                 return;
             }
 
-            using var consumers = context.RequestServices.GetServices<IProxyTelemetryConsumer>().GetEnumerator();
-
-            if (!consumers.MoveNext())
-            {
-                return;
-            }
-
-            var payload = eventData.Payload;
+#pragma warning disable IDE0007 // Use implicit type
+            // Explicit type here to drop the object? signature of payload elements
+            ReadOnlyCollection<object> payload = eventData.Payload!;
+#pragma warning restore IDE0007 // Use implicit type
 
             switch (eventData.EventId)
             {
@@ -81,11 +54,10 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
                     Debug.Assert(eventData.EventName == "ProxyStart" && payload.Count == 1);
                     {
                         var destinationPrefix = (string)payload[0];
-                        do
+                        foreach (var consumer in TelemetryConsumers)
                         {
-                            consumers.Current.OnProxyStart(eventData.TimeStamp, destinationPrefix);
+                            consumer.OnProxyStart(eventData.TimeStamp, destinationPrefix);
                         }
-                        while (consumers.MoveNext());
                     }
                     break;
 
@@ -93,11 +65,10 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
                     Debug.Assert(eventData.EventName == "ProxyStop" && payload.Count == 1);
                     {
                         var statusCode = (int)payload[0];
-                        do
+                        foreach (var consumer in TelemetryConsumers)
                         {
-                            consumers.Current.OnProxyStop(eventData.TimeStamp, statusCode);
+                            consumer.OnProxyStop(eventData.TimeStamp, statusCode);
                         }
-                        while (consumers.MoveNext());
                     }
                     break;
 
@@ -105,11 +76,10 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
                     Debug.Assert(eventData.EventName == "ProxyFailed" && payload.Count == 1);
                     {
                         var error = (ProxyError)payload[0];
-                        do
+                        foreach (var consumer in TelemetryConsumers)
                         {
-                            consumers.Current.OnProxyFailed(eventData.TimeStamp, error);
+                            consumer.OnProxyFailed(eventData.TimeStamp, error);
                         }
-                        while (consumers.MoveNext());
                     }
                     break;
 
@@ -117,11 +87,10 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
                     Debug.Assert(eventData.EventName == "ProxyStage" && payload.Count == 1);
                     {
                         var proxyStage = (ProxyStage)payload[0];
-                        do
+                        foreach (var consumer in TelemetryConsumers)
                         {
-                            consumers.Current.OnProxyStage(eventData.TimeStamp, proxyStage);
+                            consumer.OnProxyStage(eventData.TimeStamp, proxyStage);
                         }
-                        while (consumers.MoveNext());
                     }
                     break;
 
@@ -133,11 +102,10 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
                         var iops = (long)payload[2];
                         var readTime = new TimeSpan((long)payload[3]);
                         var writeTime = new TimeSpan((long)payload[4]);
-                        do
+                        foreach (var consumer in TelemetryConsumers)
                         {
-                            consumers.Current.OnContentTransferring(eventData.TimeStamp, isRequest, contentLength, iops, readTime, writeTime);
+                            consumer.OnContentTransferring(eventData.TimeStamp, isRequest, contentLength, iops, readTime, writeTime);
                         }
-                        while (consumers.MoveNext());
                     }
                     break;
 
@@ -150,11 +118,10 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
                         var readTime = new TimeSpan((long)payload[3]);
                         var writeTime = new TimeSpan((long)payload[4]);
                         var firstReadTime = new TimeSpan((long)payload[5]);
-                        do
+                        foreach (var consumer in TelemetryConsumers)
                         {
-                            consumers.Current.OnContentTransferred(eventData.TimeStamp, isRequest, contentLength, iops, readTime, writeTime, firstReadTime);
+                            consumer.OnContentTransferred(eventData.TimeStamp, isRequest, contentLength, iops, readTime, writeTime, firstReadTime);
                         }
-                        while (consumers.MoveNext());
                     }
                     break;
 
@@ -164,11 +131,10 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
                         var clusterId = (string)payload[0];
                         var routeId = (string)payload[1];
                         var destinationId = (string)payload[2];
-                        do
+                        foreach (var consumer in TelemetryConsumers)
                         {
-                            consumers.Current.OnProxyInvoke(eventData.TimeStamp, clusterId, routeId, destinationId);
+                            consumer.OnProxyInvoke(eventData.TimeStamp, clusterId, routeId, destinationId);
                         }
-                        while (consumers.MoveNext());
                     }
                     break;
             }
@@ -176,8 +142,13 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
 
         private void OnEventCounters(EventWrittenEventArgs eventData)
         {
-            Debug.Assert(eventData.EventName == "EventCounters" && eventData.Payload.Count == 1);
-            var counters = (IDictionary<string, object>)eventData.Payload[0];
+            if (MetricsConsumers is null)
+            {
+                return;
+            }
+
+            Debug.Assert(eventData.EventName == "EventCounters" && eventData.Payload!.Count == 1);
+            var counters = (IDictionary<string, object>)eventData.Payload[0]!;
 
             if (!counters.TryGetValue("Mean", out var valueObj))
             {
@@ -221,14 +192,14 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
                 _previousMetrics = metrics;
                 _currentMetrics = new ProxyMetrics();
 
-                if (previous is null || _serviceProvider is null)
+                if (previous is null)
                 {
                     return;
                 }
 
                 try
                 {
-                    foreach (var consumer in _serviceProvider.GetServices<IProxyMetricsConsumer>())
+                    foreach (var consumer in MetricsConsumers)
                     {
                         consumer.OnProxyMetrics(previous, metrics);
                     }
@@ -236,7 +207,7 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
                 catch (Exception ex)
                 {
                     // We can't let an uncaught exception propagate as that would crash the process
-                    _logger.LogError(ex, $"Uncaught exception occured while processing {nameof(ProxyMetrics)}.");
+                    Logger.LogError(ex, $"Uncaught exception occured while processing {nameof(ProxyMetrics)}.");
                 }
             }
         }

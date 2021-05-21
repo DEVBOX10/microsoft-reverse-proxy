@@ -5,7 +5,7 @@ using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
 
-namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
+namespace Yarp.ReverseProxy.Service.RuntimeModel.Transforms
 {
     /// <summary>
     /// Base64 encodes the client certificate (if any) and sets it as the header value.
@@ -14,13 +14,18 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
     {
         public RequestHeaderClientCertTransform(string headerName)
         {
-            HeaderName = headerName ?? throw new ArgumentNullException(nameof(headerName));
+            if (string.IsNullOrEmpty(headerName))
+            {
+                throw new ArgumentException($"'{nameof(headerName)}' cannot be null or empty.", nameof(headerName));
+            }
+
+            HeaderName = headerName;
         }
 
         internal string HeaderName { get; }
 
         /// <inheritdoc/>
-        public override Task ApplyAsync(RequestTransformContext context)
+        public override ValueTask ApplyAsync(RequestTransformContext context)
         {
             if (context is null)
             {
@@ -37,7 +42,7 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
                 AddHeader(context, HeaderName, encoded);
             }
 
-            return Task.CompletedTask;
+            return default;
         }
     }
 }

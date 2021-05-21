@@ -2,21 +2,22 @@
 // Licensed under the MIT License.
 
 using System.Collections.Generic;
+using System.Text.Json;
 using Xunit;
 
-namespace Microsoft.ReverseProxy.Abstractions.Tests
+namespace Yarp.ReverseProxy.Abstractions.Tests
 {
     public class ProxyRouteTests
     {
         [Fact]
         public void Equals_Positive()
         {
-            var a = new ProxyRoute()
+            var a = new RouteConfig()
             {
                 AuthorizationPolicy = "a",
                 ClusterId = "c",
                 CorsPolicy = "co",
-                Match = new ProxyMatch()
+                Match = new RouteMatch()
                 {
                     Headers = new[]
                     {
@@ -39,12 +40,12 @@ namespace Microsoft.ReverseProxy.Abstractions.Tests
                 Order = 1,
                 RouteId = "R",
             };
-            var b = new ProxyRoute()
+            var b = new RouteConfig()
             {
                 AuthorizationPolicy = "a",
                 ClusterId = "c",
                 CorsPolicy = "co",
-                Match = new ProxyMatch()
+                Match = new RouteMatch()
                 {
                     Headers = new[]
                     {
@@ -76,12 +77,12 @@ namespace Microsoft.ReverseProxy.Abstractions.Tests
         [Fact]
         public void Equals_Negative()
         {
-            var a = new ProxyRoute()
+            var a = new RouteConfig()
             {
                 AuthorizationPolicy = "a",
                 ClusterId = "c",
                 CorsPolicy = "co",
-                Match = new ProxyMatch()
+                Match = new RouteMatch()
                 {
                     Headers = new[]
                     {
@@ -107,7 +108,7 @@ namespace Microsoft.ReverseProxy.Abstractions.Tests
             var b = a with { AuthorizationPolicy = "b" };
             var c = a with { ClusterId = "d" };
             var d = a with { CorsPolicy = "p" };
-            var e = a with { Match = new ProxyMatch() };
+            var e = a with { Match = new RouteMatch() };
             var f = a with { Metadata = new Dictionary<string, string>() { { "f", "f1" } } };
             var g = a with { Order = null };
             var h = a with { RouteId = "h" };
@@ -124,7 +125,53 @@ namespace Microsoft.ReverseProxy.Abstractions.Tests
         [Fact]
         public void Equals_Null_False()
         {
-            Assert.False(new ProxyRoute().Equals(null));
+            Assert.False(new RouteConfig().Equals(null));
+        }
+
+        [Fact]
+        public void RouteConfig_CanBeJsonSerialized()
+        {
+            var route1 = new RouteConfig()
+            {
+                AuthorizationPolicy = "a",
+                ClusterId = "c",
+                CorsPolicy = "co",
+                Match = new RouteMatch()
+                {
+                    Headers = new[]
+                    {
+                        new RouteHeader()
+                        {
+                            Name = "Hi",
+                            Values = new[] { "v1", "v2" },
+                            IsCaseSensitive = true,
+                            Mode = HeaderMatchMode.HeaderPrefix,
+                        }
+                    },
+                    Hosts = new[] { "foo:90" },
+                    Methods = new[] { "GET", "POST" },
+                    Path = "/p",
+                },
+                Metadata = new Dictionary<string, string>()
+                {
+                    { "m", "m1" }
+                },
+                Transforms = new[]
+                {
+                    new Dictionary<string, string>
+                    {
+                        { "key", "value" },
+                        { "key1", "" }
+                    }
+                },
+                Order = 1,
+                RouteId = "R",
+            };
+
+            var json = JsonSerializer.Serialize(route1);
+            var route2 = JsonSerializer.Deserialize<RouteConfig>(json);
+
+            Assert.Equal(route1, route2);
         }
     }
 }

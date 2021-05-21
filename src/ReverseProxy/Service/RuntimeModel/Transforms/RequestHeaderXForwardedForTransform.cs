@@ -1,10 +1,11 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+using System;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Primitives;
 
-namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
+namespace Yarp.ReverseProxy.Service.RuntimeModel.Transforms
 {
     /// <summary>
     /// Sets or appends the X-Forwarded-For header with the previous clients's IP address.
@@ -18,7 +19,12 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
         /// <param name="append">Indicates if the new value should append to or replace an existing header.</param>
         public RequestHeaderXForwardedForTransform(string headerName, bool append)
         {
-            HeaderName = headerName ?? throw new System.ArgumentNullException(nameof(headerName));
+            if (string.IsNullOrEmpty(headerName))
+            {
+                throw new ArgumentException($"'{nameof(headerName)}' cannot be null or empty.", nameof(headerName));
+            }
+
+            HeaderName = headerName;
             Append = append;
         }
 
@@ -27,7 +33,7 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
         internal bool Append { get; }
 
         /// <inheritdoc/>
-        public override Task ApplyAsync(RequestTransformContext context)
+        public override ValueTask ApplyAsync(RequestTransformContext context)
         {
             if (context is null)
             {
@@ -56,7 +62,7 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
                 AddHeader(context, HeaderName, remoteIp);
             }
 
-            return Task.CompletedTask;
+            return default;
         }
     }
 }

@@ -3,9 +3,9 @@
 
 using System.Collections.Generic;
 using Microsoft.AspNetCore.Http;
-using Microsoft.ReverseProxy.RuntimeModel;
+using Yarp.ReverseProxy.RuntimeModel;
 
-namespace Microsoft.ReverseProxy.Service.LoadBalancing
+namespace Yarp.ReverseProxy.Service.LoadBalancing
 {
     /// <summary>
     /// Provides a method that applies a load balancing policy
@@ -16,14 +16,13 @@ namespace Microsoft.ReverseProxy.Service.LoadBalancing
         /// <summary>
         ///  A unique identifier for this load balancing policy. This will be referenced from config.
         /// </summary>
-        public string Name { get; }
+        string Name { get; }
 
         /// <summary>
         /// Picks a destination to send traffic to.
         /// </summary>
-        // TODO: How to ensure retries pick a different destination when available?
-        DestinationInfo PickDestination(
+        DestinationState? PickDestination(
             HttpContext context,
-            IReadOnlyList<DestinationInfo> availableDestinations);
+            IReadOnlyList<DestinationState> availableDestinations);
     }
 }

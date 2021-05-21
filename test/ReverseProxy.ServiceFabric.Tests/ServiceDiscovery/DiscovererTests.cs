@@ -1,6 +1,5 @@
-// <copyright file="ServiceFabricDiscoveryWorkerTests.cs" company="Microsoft Corporation">
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// </copyright>
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
 
 using System;
 using System.Collections.Generic;
@@ -14,14 +13,14 @@ using System.Threading.Tasks;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Microsoft.ReverseProxy.Abstractions;
-using Microsoft.ReverseProxy.Common.Tests;
-using Microsoft.ReverseProxy.Service;
 using Moq;
 using Xunit;
 using Xunit.Abstractions;
+using Yarp.ReverseProxy.Abstractions;
+using Yarp.ReverseProxy.Common.Tests;
+using Yarp.ReverseProxy.Service;
 
-namespace Microsoft.ReverseProxy.ServiceFabric.Tests
+namespace Yarp.ReverseProxy.ServiceFabric.Tests
 {
     public class DiscovererTests : TestAutoMockBase
     {
@@ -50,10 +49,10 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
                 .Returns(() => _scenarioOptions);
 
             Mock<IConfigValidator>()
-                .Setup(v => v.ValidateClusterAsync(It.IsAny<Cluster>()))
+                .Setup(v => v.ValidateClusterAsync(It.IsAny<ClusterConfig>()))
                 .ReturnsAsync(() => new List<Exception>());
             Mock<IConfigValidator>()
-                .Setup(v => v.ValidateRouteAsync(It.IsAny<ProxyRoute>()))
+                .Setup(v => v.ValidateRouteAsync(It.IsAny<RouteConfig>()))
                 .ReturnsAsync(() => new List<Exception>());
         }
 
@@ -194,7 +193,7 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
                 ClusterWithDestinations(_testServiceName, labels3,
                     SFTestHelpers.BuildDestinationFromReplica(replica3)),
             };
-            var expectedRoutes = new List<ProxyRoute>();
+            var expectedRoutes = new List<RouteConfig>();
             expectedRoutes.AddRange(LabelsParser.BuildRoutes(_testServiceName, labels1));
             expectedRoutes.AddRange(LabelsParser.BuildRoutes(_testServiceName, labels2));
             expectedRoutes.AddRange(LabelsParser.BuildRoutes(_testServiceName, labels3));
@@ -306,7 +305,7 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
                 ClusterWithDestinations(_testServiceName, labels,
                     SFTestHelpers.BuildDestinationFromReplica(replica)),
             };
-            var expectedRoutes = new List<ProxyRoute>();
+            var expectedRoutes = new List<RouteConfig>();
 
             clusters.Should().BeEquivalentTo(expectedClusters);
             routes.Should().BeEmpty();
@@ -332,7 +331,7 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
 
             var expectedClusters = new[]
             {
-                LabelsParser.BuildCluster(_testServiceName, labels, new Dictionary<string, Destination>()),
+                LabelsParser.BuildCluster(_testServiceName, labels, new Dictionary<string, DestinationConfig>()),
             };
             var expectedRoutes = LabelsParser.BuildRoutes(_testServiceName, labels);
 
@@ -362,7 +361,7 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
 
             var expectedClusters = new[]
             {
-                LabelsParser.BuildCluster(_testServiceName, labels, new Dictionary<string, Destination>()),
+                LabelsParser.BuildCluster(_testServiceName, labels, new Dictionary<string, DestinationConfig>()),
             };
             var expectedRoutes = LabelsParser.BuildRoutes(_testServiceName, labels);
 
@@ -394,7 +393,7 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
 
             var expectedClusters = new[]
             {
-                LabelsParser.BuildCluster(_testServiceName, labels, new Dictionary<string, Destination>()),
+                LabelsParser.BuildCluster(_testServiceName, labels, new Dictionary<string, DestinationConfig>()),
             };
             var expectedRoutes = LabelsParser.BuildRoutes(_testServiceName, labels);
 
@@ -569,17 +568,17 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
 
             var expectedClusters = new[]
             {
-                LabelsParser.BuildCluster(_testServiceName, labels, new Dictionary<string, Destination>()),
+                LabelsParser.BuildCluster(_testServiceName, labels, new Dictionary<string, DestinationConfig>()),
             };
 
             clusters.Should().BeEquivalentTo(expectedClusters);
             _healthReports.Should().HaveCount(1);
         }
 
-        private static Cluster ClusterWithDestinations(Uri serviceName, Dictionary<string, string> labels,
-            params KeyValuePair<string, Destination>[] destinations)
+        private static ClusterConfig ClusterWithDestinations(Uri serviceName, Dictionary<string, string> labels,
+            params KeyValuePair<string, DestinationConfig>[] destinations)
         {
-            var newDestinations = new Dictionary<string, Destination>(StringComparer.OrdinalIgnoreCase);
+            var newDestinations = new Dictionary<string, DestinationConfig>(StringComparer.OrdinalIgnoreCase);
             foreach (var destination in destinations)
             {
                 newDestinations.Add(destination.Key, destination.Value);
@@ -588,7 +587,7 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
             return LabelsParser.BuildCluster(serviceName, labels, newDestinations);
         }
 
-        private async Task<(IReadOnlyList<ProxyRoute> Routes, IReadOnlyList<Cluster> Clusters)> RunScenarioAsync()
+        private async Task<(IReadOnlyList<RouteConfig> Routes, IReadOnlyList<ClusterConfig> Clusters)> RunScenarioAsync()
         {
             if (_scenarioOptions == null)
             {

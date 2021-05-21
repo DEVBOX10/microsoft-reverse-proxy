@@ -2,28 +2,39 @@
 // Licensed under the MIT License.
 
 using System.Collections.Generic;
-using Microsoft.ReverseProxy.RuntimeModel;
+using Yarp.ReverseProxy.RuntimeModel;
 
-namespace Microsoft.ReverseProxy.Middleware
+namespace Yarp.ReverseProxy.Middleware
 {
     /// <summary>
-    /// Store current ClusterConfig and Tracks proxy cluster destinations that are available to handle the current request.
+    /// Stores the current proxy configuration used when processing the request.
     /// </summary>
     public interface IReverseProxyFeature
     {
         /// <summary>
-        /// Cluster config for the the current request.
+        /// The route model for the current request.
         /// </summary>
-        ClusterConfig ClusterConfig { get; set; }
+        RouteModel Route { get; }
 
         /// <summary>
-        /// Cluster destinations that can handle the current request.
+        /// The cluster model for the current request.
         /// </summary>
-        IReadOnlyList<DestinationInfo> AvailableDestinations { get; set; }
+        ClusterModel Cluster { get; }
+
+        /// <summary>
+        /// All destinations for the current cluster.
+        /// </summary>
+        IReadOnlyList<DestinationState> AllDestinations { get; }
+
+        /// <summary>
+        /// Cluster destinations that can handle the current request. This will initially include all destinations except those
+        /// currently marked as unhealth if health checks are enabled.
+        /// </summary>
+        IReadOnlyList<DestinationState> AvailableDestinations { get; set; }
 
         /// <summary>
         /// The actual destination that the request was proxied to.
         /// </summary>
-        DestinationInfo SelectedDestination { get; set; }
+        DestinationState? ProxiedDestination { get; set; }
     }
 }

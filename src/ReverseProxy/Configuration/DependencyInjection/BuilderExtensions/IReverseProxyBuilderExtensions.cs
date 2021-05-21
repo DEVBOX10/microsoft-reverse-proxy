@@ -1,37 +1,41 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+using System.Linq;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.ReverseProxy.RuntimeModel;
-using Microsoft.ReverseProxy.Service;
-using Microsoft.ReverseProxy.Service.Config;
-using Microsoft.ReverseProxy.Service.HealthChecks;
-using Microsoft.ReverseProxy.Service.LoadBalancing;
-using Microsoft.ReverseProxy.Service.Management;
-using Microsoft.ReverseProxy.Service.Proxy.Infrastructure;
-using Microsoft.ReverseProxy.Service.Routing;
-using Microsoft.ReverseProxy.Service.SessionAffinity;
-using Microsoft.ReverseProxy.Utilities;
-using System.Linq;
+using Yarp.ReverseProxy.RuntimeModel;
+using Yarp.ReverseProxy.Service;
+using Yarp.ReverseProxy.Service.Config;
+using Yarp.ReverseProxy.Service.HealthChecks;
+using Yarp.ReverseProxy.Service.LoadBalancing;
+using Yarp.ReverseProxy.Service.Management;
+using Yarp.ReverseProxy.Service.Proxy.Infrastructure;
+using Yarp.ReverseProxy.Service.Routing;
+using Yarp.ReverseProxy.Service.SessionAffinity;
+using Yarp.ReverseProxy.Utilities;
 
-namespace Microsoft.ReverseProxy.Configuration.DependencyInjection
+namespace Yarp.ReverseProxy.Configuration.DependencyInjection
 {
     internal static class IReverseProxyBuilderExtensions
     {
         public static IReverseProxyBuilder AddConfigBuilder(this IReverseProxyBuilder builder)
         {
             builder.Services.TryAddSingleton<IConfigValidator, ConfigValidator>();
+            builder.Services.TryAddSingleton<IRandomFactory, RandomFactory>();
+            builder.AddTransformFactory<ForwardedTransformFactory>();
+            builder.AddTransformFactory<HttpMethodTransformFactory>();
+            builder.AddTransformFactory<PathTransformFactory>();
+            builder.AddTransformFactory<QueryTransformFactory>();
+            builder.AddTransformFactory<RequestHeadersTransformFactory>();
+            builder.AddTransformFactory<ResponseTransformFactory>();
             builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<MatcherPolicy, HeaderMatcherPolicy>());
             return builder;
         }
 
         public static IReverseProxyBuilder AddRuntimeStateManagers(this IReverseProxyBuilder builder)
         {
-            builder.Services.TryAddSingleton<IDestinationManagerFactory, DestinationManagerFactory>();
-            builder.Services.TryAddSingleton<IClusterManager, ClusterManager>();
-            builder.Services.TryAddSingleton<IRouteManager, RouteManager>();
             builder.Services.TryAddSingleton<ITimerFactory, TimerFactory>();
             builder.Services.TryAddSingleton<IDestinationHealthUpdater, DestinationHealthUpdater>();
             return builder;
@@ -45,9 +49,7 @@ namespace Microsoft.ReverseProxy.Configuration.DependencyInjection
 
         public static IReverseProxyBuilder AddProxy(this IReverseProxyBuilder builder)
         {
-            builder.Services.TryAddSingleton<ITransformBuilder, TransformBuilder>();
             builder.Services.TryAddSingleton<IProxyHttpClientFactory, ProxyHttpClientFactory>();
-            builder.Services.TryAddSingleton<IRandomFactory, RandomFactory>();
 
             builder.Services.AddHttpProxy();
             return builder;
@@ -78,6 +80,7 @@ namespace Microsoft.ReverseProxy.Configuration.DependencyInjection
                 new ServiceDescriptor(typeof(ISessionAffinityProvider), typeof(CookieSessionAffinityProvider), ServiceLifetime.Singleton),
                 new ServiceDescriptor(typeof(ISessionAffinityProvider), typeof(CustomHeaderSessionAffinityProvider), ServiceLifetime.Singleton)
             });
+            builder.AddTransforms<AffinitizeTransformProvider>();
 
             return builder;
         }

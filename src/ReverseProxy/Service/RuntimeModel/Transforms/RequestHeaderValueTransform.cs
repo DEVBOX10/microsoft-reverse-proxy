@@ -5,7 +5,7 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Primitives;
 
-namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
+namespace Yarp.ReverseProxy.Service.RuntimeModel.Transforms
 {
     /// <summary>
     /// Sets or appends simple request header values.
@@ -14,7 +14,12 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
     {
         public RequestHeaderValueTransform(string headerName, string value, bool append)
         {
-            HeaderName = headerName ?? throw new ArgumentNullException(nameof(headerName));
+            if (string.IsNullOrEmpty(headerName))
+            {
+                throw new ArgumentException($"'{nameof(headerName)}' cannot be null or empty.", nameof(headerName));
+            }
+
+            HeaderName = headerName;
             Value = value ?? throw new ArgumentNullException(nameof(value));
             Append = append;
         }
@@ -26,7 +31,7 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
         internal bool Append { get; }
 
         /// <inheritdoc/>
-        public override Task ApplyAsync(RequestTransformContext context)
+        public override ValueTask ApplyAsync(RequestTransformContext context)
         {
             if (context is null)
             {
@@ -40,13 +45,13 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
                 var values = StringValues.Concat(existingValues, Value);
                 AddHeader(context, HeaderName, values);
             }
-            else if (!string.IsNullOrEmpty(Value))
+            else
             {
                 // Set
                 AddHeader(context, HeaderName, Value);
             }
 
-            return Task.CompletedTask;
+            return default;
         }
     }
 }

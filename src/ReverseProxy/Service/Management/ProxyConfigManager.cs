@@ -2,7 +2,10 @@
 // Licensed under the MIT License.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -11,13 +14,12 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
-using Microsoft.ReverseProxy.Abstractions;
-using Microsoft.ReverseProxy.RuntimeModel;
-using Microsoft.ReverseProxy.Service.HealthChecks;
-using Microsoft.ReverseProxy.Service.Proxy;
-using Microsoft.ReverseProxy.Service.Proxy.Infrastructure;
+using Yarp.ReverseProxy.Abstractions;
+using Yarp.ReverseProxy.RuntimeModel;
+using Yarp.ReverseProxy.Service.HealthChecks;
+using Yarp.ReverseProxy.Service.Proxy.Infrastructure;
 
-namespace Microsoft.ReverseProxy.Service.Management
+namespace Yarp.ReverseProxy.Service.Management
 {
     /// <summary>
     /// Provides a method to apply Proxy configuration changes
@@ -26,33 +28,33 @@ namespace Microsoft.ReverseProxy.Service.Management
     /// in a thread-safe manner while avoiding locks on the hot path.
     /// </summary>
     /// <remarks>
-    /// This takes inspiration from <a href="https://github.com/aspnet/AspNetCore/blob/master/src/Mvc/Mvc.Core/src/Routing/ActionEndpointDataSourceBase.cs"/>.
+    /// This takes inspiration from <a "https://github.com/dotnet/aspnetcore/blob/cbe16474ce9db7ff588aed89596ff4df5c3f62e1/src/Mvc/Mvc.Core/src/Routing/ActionEndpointDataSourceBase.cs"/>.
     /// </remarks>
-    internal class ProxyConfigManager : EndpointDataSource, IDisposable
+    internal sealed class ProxyConfigManager : EndpointDataSource, IDisposable
     {
         private readonly object _syncRoot = new object();
         private readonly ILogger<ProxyConfigManager> _logger;
         private readonly IProxyConfigProvider _provider;
-        private readonly IClusterManager _clusterManager;
-        private readonly IRouteManager _routeManager;
-        private readonly IEnumerable<IProxyConfigFilter> _filters;
+        private readonly IClusterChangeListener[] _clusterChangeListeners;
+        private readonly ConcurrentDictionary<string, ClusterState> _clusters = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, RouteState> _routes = new(StringComparer.OrdinalIgnoreCase);
+        private readonly IProxyConfigFilter[] _filters;
         private readonly IConfigValidator _configValidator;
         private readonly IProxyHttpClientFactory _httpClientFactory;
         private readonly ProxyEndpointFactory _proxyEndpointFactory;
         private readonly ITransformBuilder _transformBuilder;
         private readonly List<Action<EndpointBuilder>> _conventions;
         private readonly IActiveHealthCheckMonitor _activeHealthCheckMonitor;
-        private IDisposable _changeSubscription;
+        private IDisposable? _changeSubscription;
 
-        private List<Endpoint> _endpoints;
+        private List<Endpoint>? _endpoints;
         private CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
         private IChangeToken _changeToken;
 
         public ProxyConfigManager(
             ILogger<ProxyConfigManager> logger,
             IProxyConfigProvider provider,
-            IClusterManager clusterManager,
-            IRouteManager routeManager,
+            IEnumerable<IClusterChangeListener> clusterChangeListeners,
             IEnumerable<IProxyConfigFilter> filters,
             IConfigValidator configValidator,
             ProxyEndpointFactory proxyEndpointFactory,
@@ -62,9 +64,9 @@ namespace Microsoft.ReverseProxy.Service.Management
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _provider = provider ?? throw new ArgumentNullException(nameof(provider));
-            _clusterManager = clusterManager ?? throw new ArgumentNullException(nameof(clusterManager));
-            _routeManager = routeManager ?? throw new ArgumentNullException(nameof(routeManager));
-            _filters = filters ?? throw new ArgumentNullException(nameof(filters));
+            _clusterChangeListeners = (clusterChangeListeners as IClusterChangeListener[])
+                ?? clusterChangeListeners?.ToArray() ?? throw new ArgumentNullException(nameof(clusterChangeListeners));
+            _filters = (filters as IProxyConfigFilter[]) ?? filters?.ToArray() ?? throw new ArgumentNullException(nameof(filters));
             _configValidator = configValidator ?? throw new ArgumentNullException(nameof(configValidator));
             _proxyEndpointFactory = proxyEndpointFactory ?? throw new ArgumentNullException(nameof(proxyEndpointFactory));
             _transformBuilder = transformBuilder ?? throw new ArgumentNullException(nameof(transformBuilder));
@@ -88,37 +90,33 @@ namespace Microsoft.ReverseProxy.Service.Management
             {
                 // The Endpoints needs to be lazy the first time to give a chance to ReverseProxyConventionBuilder to add its conventions.
                 // Endpoints are accessed by routing on the first request.
-                Initialize();   
+                if (_endpoints == null)
+                {
+                    lock (_syncRoot)
+                    {
+                        if (_endpoints == null)
+                        {
+                            CreateEndpoints();
+                        }
+                    }
+                }
                 return _endpoints;
             }
         }
 
-        private void Initialize()
-        {
-            if (_endpoints == null)
-            {
-                lock (_syncRoot)
-                {
-                    if (_endpoints == null)
-                    {
-                        CreateEndpoints();
-                    }
-                }
-            }
-        }
-
+        [MemberNotNull(nameof(_endpoints))]
         private void CreateEndpoints()
         {
-            var routes = _routeManager.GetItems();
-            var endpoints = new List<Endpoint>(routes.Count);
-            foreach (var existingRoute in routes)
+            var endpoints = new List<Endpoint>();
+            // Directly enumerate the ConcurrentDictionary to limit locking and copying.
+            foreach (var existingRoute in _routes)
             {
                 // Only rebuild the endpoint for modified routes or clusters.
-                var endpoint = existingRoute.CachedEndpoint;
+                var endpoint = existingRoute.Value.CachedEndpoint;
                 if (endpoint == null)
                 {
-                    endpoint = _proxyEndpointFactory.CreateEndpoint(existingRoute.Config, _conventions);
-                    existingRoute.CachedEndpoint = endpoint;
+                    endpoint = _proxyEndpointFactory.CreateEndpoint(existingRoute.Value.Model, _conventions);
+                    existingRoute.Value.CachedEndpoint = endpoint;
                 }
                 endpoints.Add(endpoint);
             }
@@ -152,7 +150,8 @@ namespace Microsoft.ReverseProxy.Service.Management
             }
 
             // Initial active health check is run in the background.
-            _ = _activeHealthCheckMonitor.CheckHealthAsync(_clusterManager.GetItems());
+            // Directly enumerate the ConcurrentDictionary to limit locking and copying.
+            _ = _activeHealthCheckMonitor.CheckHealthAsync(_clusters.Select(pair => pair.Value));
             return this;
         }
 
@@ -219,15 +218,15 @@ namespace Microsoft.ReverseProxy.Service.Management
             return routesChanged;
         }
 
-        private async Task<(IList<ProxyRoute>, IList<Exception>)> VerifyRoutesAsync(IReadOnlyList<ProxyRoute> routes, CancellationToken cancellation)
+        private async Task<(IList<RouteConfig>, IList<Exception>)> VerifyRoutesAsync(IReadOnlyList<RouteConfig> routes, CancellationToken cancellation)
         {
             if (routes == null)
             {
-                return (Array.Empty<ProxyRoute>(), Array.Empty<Exception>());
+                return (Array.Empty<RouteConfig>(), Array.Empty<Exception>());
             }
 
             var seenRouteIds = new HashSet<string>();
-            var sortedRoutes = new SortedList<(int, string), ProxyRoute>(routes?.Count ?? 0);
+            var configuredRoutes = new List<RouteConfig>(routes.Count);
             var errors = new List<Exception>();
 
             foreach (var r in routes)
@@ -260,39 +259,39 @@ namespace Microsoft.ReverseProxy.Service.Management
                     continue;
                 }
 
-                sortedRoutes.Add((route.Order ?? 0, route.RouteId), route);
+                configuredRoutes.Add(route);
             }
 
             if (errors.Count > 0)
             {
-                return (null, errors);
+                return (Array.Empty<RouteConfig>(), errors);
             }
 
-            return (sortedRoutes.Values, errors);
+            return (configuredRoutes, errors);
         }
 
-        private async Task<(IList<Cluster>, IList<Exception>)> VerifyClustersAsync(IReadOnlyList<Cluster> clusters, CancellationToken cancellation)
+        private async Task<(IList<ClusterConfig>, IList<Exception>)> VerifyClustersAsync(IReadOnlyList<ClusterConfig> clusters, CancellationToken cancellation)
         {
             if (clusters == null)
             {
-                return (Array.Empty<Cluster>(), Array.Empty<Exception>());
+                return (Array.Empty<ClusterConfig>(), Array.Empty<Exception>());
             }
 
             var seenClusterIds = new HashSet<string>(clusters.Count, StringComparer.OrdinalIgnoreCase);
-            var configuredClusters = new List<Cluster>(clusters.Count);
+            var configuredClusters = new List<ClusterConfig>(clusters.Count);
             var errors = new List<Exception>();
             // The IProxyConfigProvider provides a fresh snapshot that we need to reconfigure each time.
             foreach (var c in clusters)
             {
                 try
                 {
-                    if (seenClusterIds.Contains(c.Id))
+                    if (seenClusterIds.Contains(c.ClusterId))
                     {
-                        errors.Add(new ArgumentException($"Duplicate cluster '{c.Id}'."));
+                        errors.Add(new ArgumentException($"Duplicate cluster '{c.ClusterId}'."));
                         continue;
                     }
 
-                    seenClusterIds.Add(c.Id);
+                    seenClusterIds.Add(c.ClusterId);
 
                     // Don't modify the original
                     var cluster = c;
@@ -313,189 +312,227 @@ namespace Microsoft.ReverseProxy.Service.Management
                 }
                 catch (Exception ex)
                 {
-                    errors.Add(new ArgumentException($"An exception was thrown from the configuration callbacks for cluster '{c.Id}'.", ex));
+                    errors.Add(new ArgumentException($"An exception was thrown from the configuration callbacks for cluster '{c.ClusterId}'.", ex));
                 }
             }
 
             if (errors.Count > 0)
             {
-                return (null, errors);
+                return (Array.Empty<ClusterConfig>(), errors);
             }
 
             return (configuredClusters, errors);
         }
 
-        private void UpdateRuntimeClusters(IList<Cluster> newClusters)
+        private void UpdateRuntimeClusters(IList<ClusterConfig> incomingClusters)
         {
             var desiredClusters = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var newCluster in newClusters)
+            foreach (var incomingCluster in incomingClusters)
             {
-                desiredClusters.Add(newCluster.Id);
+                desiredClusters.Add(incomingCluster.ClusterId);
 
-                _clusterManager.GetOrCreateItem(
-                    itemId: newCluster.Id,
-                    setupAction: currentCluster =>
+                if (_clusters.TryGetValue(incomingCluster.ClusterId, out var currentCluster))
+                {
+                    var destinationsChanged = UpdateRuntimeDestinations(incomingCluster.Destinations, currentCluster.Destinations);
+
+                    var currentClusterModel = currentCluster.Model;
+
+                    var httpClient = _httpClientFactory.CreateClient(new ProxyHttpClientContext
                     {
-                        // We intentionally do not consider destination changes when updating the cluster Revision.
-                        // Revision is used to rebuild routing endpoints which should be unrelated to destinations,
-                        // and destinations are the most likely to change.
-                        UpdateRuntimeDestinations(newCluster.Destinations, currentCluster.DestinationManager);
-
-                        var currentClusterConfig = currentCluster.Config;
-
-                        var httpClient = _httpClientFactory.CreateClient(new ProxyHttpClientContext {
-                            ClusterId = currentCluster.ClusterId,
-                            OldOptions = currentClusterConfig?.Options.HttpClient ?? ProxyHttpClientOptions.Empty,
-                            OldMetadata = currentClusterConfig?.Options.Metadata,
-                            OldClient = currentClusterConfig?.HttpClient,
-                            NewOptions = newCluster.HttpClient ?? ProxyHttpClientOptions.Empty,
-                            NewMetadata = newCluster.Metadata
-                        });
-
-                        var newClusterConfig = new ClusterConfig(newCluster, httpClient);
-
-                        if (currentClusterConfig == null ||
-                            currentClusterConfig.HasConfigChanged(newClusterConfig))
-                        {
-                            currentCluster.Revision++;
-                            if (currentClusterConfig == null)
-                            {
-                                Log.ClusterAdded(_logger, newCluster.Id);
-                            }
-                            else
-                            {
-                                Log.ClusterChanged(_logger, newCluster.Id);
-                            }
-
-                            // Config changed, so update runtime cluster
-                            currentCluster.Config = newClusterConfig;
-                        }
-
-                        currentCluster.ForceUpdateDynamicState();
+                        ClusterId = currentCluster.ClusterId,
+                        OldConfig = currentClusterModel.Config.HttpClient ?? HttpClientConfig.Empty,
+                        OldMetadata = currentClusterModel.Config.Metadata,
+                        OldClient = currentClusterModel.HttpClient,
+                        NewConfig = incomingCluster.HttpClient ?? HttpClientConfig.Empty,
+                        NewMetadata = incomingCluster.Metadata
                     });
+
+                    var newClusterModel = new ClusterModel(incomingCluster, httpClient);
+
+                    // Excludes destination changes, they're tracked separately.
+                    var configChanged = currentClusterModel.HasConfigChanged(newClusterModel);
+                    if (configChanged)
+                    {
+                        currentCluster.Revision++;
+                        Log.ClusterChanged(_logger, incomingCluster.ClusterId);
+
+                        // Config changed, so update runtime cluster
+                        currentCluster.Model = newClusterModel;
+                    }
+
+                    if (destinationsChanged || configChanged)
+                    {
+                        currentCluster.ProcessDestinationChanges();
+
+                        foreach (var listener in _clusterChangeListeners)
+                        {
+                            listener.OnClusterChanged(currentCluster);
+                        }
+                    }
+                }
+                else
+                {
+                    var newClusterState = new ClusterState(incomingCluster.ClusterId);
+
+                    UpdateRuntimeDestinations(incomingCluster.Destinations, newClusterState.Destinations);
+
+                    var httpClient = _httpClientFactory.CreateClient(new ProxyHttpClientContext
+                    {
+                        ClusterId = newClusterState.ClusterId,
+                        NewConfig = incomingCluster.HttpClient ?? HttpClientConfig.Empty,
+                        NewMetadata = incomingCluster.Metadata
+                    });
+
+                    newClusterState.Model = new ClusterModel(incomingCluster, httpClient);
+                    newClusterState.Revision++;
+                    Log.ClusterAdded(_logger, incomingCluster.ClusterId);
+
+                    newClusterState.ProcessDestinationChanges();
+
+                    var added = _clusters.TryAdd(newClusterState.ClusterId, newClusterState);
+                    Debug.Assert(added);
+
+                    foreach (var listener in _clusterChangeListeners)
+                    {
+                        listener.OnClusterAdded(newClusterState);
+                    }
+                }
             }
 
-            foreach (var existingCluster in _clusterManager.GetItems())
+            // Directly enumerate the ConcurrentDictionary to limit locking and copying.
+            foreach (var existingClusterPair in _clusters)
             {
+                var existingCluster = existingClusterPair.Value;
                 if (!desiredClusters.Contains(existingCluster.ClusterId))
                 {
-                    // NOTE 1: This is safe to do within the `foreach` loop
-                    // because `IClusterManager.GetItems` returns a copy of the list of clusters.
+                    // NOTE 1: Remove is safe to do within the `foreach` loop on ConcurrentDictionary
                     //
-                    // NOTE 2: Removing the cluster from `IClusterManager` is safe and existing
+                    // NOTE 2: Removing the cluster from _clusters is safe and existing
                     // ASP .NET Core endpoints will continue to work with their existing behavior (until those endpoints are updated)
                     // and the Garbage Collector won't destroy this cluster object while it's referenced elsewhere.
                     Log.ClusterRemoved(_logger, existingCluster.ClusterId);
-                    _clusterManager.TryRemoveItem(existingCluster.ClusterId);
+                    var removed = _clusters.TryRemove(existingCluster.ClusterId, out var _);
+                    Debug.Assert(removed);
+
+                    foreach (var listener in _clusterChangeListeners)
+                    {
+                        listener.OnClusterRemoved(existingCluster);
+                    }
                 }
             }
         }
 
-        private void UpdateRuntimeDestinations(IReadOnlyDictionary<string, Destination> newDestinations, IDestinationManager destinationManager)
+        private bool UpdateRuntimeDestinations(IReadOnlyDictionary<string, DestinationConfig>? incomingDestinations, ConcurrentDictionary<string, DestinationState> currentDestinations)
         {
             var desiredDestinations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var changed = false;
 
-            foreach (var newDestination in newDestinations)
+            if (incomingDestinations != null)
             {
-                desiredDestinations.Add(newDestination.Key);
-                destinationManager.GetOrCreateItem(
-                    itemId: newDestination.Key,
-                    setupAction: destination =>
+                foreach (var incomingDestination in incomingDestinations)
+                {
+                    desiredDestinations.Add(incomingDestination.Key);
+
+                    if (currentDestinations.TryGetValue(incomingDestination.Key, out var currentDestination))
                     {
-                        var destinationConfig = destination.Config;
-                        if (destinationConfig?.Address != newDestination.Value.Address || destinationConfig?.Health != newDestination.Value.Health)
+                        if (currentDestination.Model.HasChanged(incomingDestination.Value))
                         {
-                            if (destinationConfig == null)
-                            {
-                                Log.DestinationAdded(_logger, newDestination.Key);
-                            }
-                            else
-                            {
-                                Log.DestinationChanged(_logger, newDestination.Key);
-                            }
-                            destination.Config = new DestinationConfig(newDestination.Value.Address, newDestination.Value.Health);
+                            Log.DestinationChanged(_logger, incomingDestination.Key);
+                            currentDestination.Model = new DestinationModel(incomingDestination.Value);
+                            changed = true;
                         }
-                    });
+                    }
+                    else
+                    {
+                        Log.DestinationAdded(_logger, incomingDestination.Key);
+                        var newDestination = new DestinationState(incomingDestination.Key)
+                        {
+                            Model = new DestinationModel(incomingDestination.Value),
+                        };
+                        var added = currentDestinations.TryAdd(newDestination.DestinationId, newDestination);
+                        Debug.Assert(added);
+                        changed = true;
+                    }
+                }
             }
 
-            foreach (var existingDestination in destinationManager.GetItems())
+            // Directly enumerate the ConcurrentDictionary to limit locking and copying.
+            foreach (var existingDestinationPair in currentDestinations)
             {
-                if (!desiredDestinations.Contains(existingDestination.DestinationId))
+                var id = existingDestinationPair.Value.DestinationId;
+                if (!desiredDestinations.Contains(id))
                 {
-                    // NOTE 1: This is safe to do within the `foreach` loop
-                    // because `IDestinationManager.GetItems` returns a copy of the list of destinations.
+                    // NOTE 1: Remove is safe to do within the `foreach` loop on ConcurrentDictionary
                     //
                     // NOTE 2: Removing the endpoint from `IEndpointManager` is safe and existing
                     // clusters will continue to work with their existing behavior (until those clusters are updated)
                     // and the Garbage Collector won't destroy this cluster object while it's referenced elsewhere.
-                    Log.DestinationRemoved(_logger, existingDestination.DestinationId);
-                    destinationManager.TryRemoveItem(existingDestination.DestinationId);
+                    Log.DestinationRemoved(_logger, id);
+                    var removed = currentDestinations.TryRemove(id, out var _);
+                    Debug.Assert(removed);
+                    changed = true;
                 }
             }
+
+            return changed;
         }
 
-        private bool UpdateRuntimeRoutes(IList<ProxyRoute> routes)
+        private bool UpdateRuntimeRoutes(IList<RouteConfig> incomingRoutes)
         {
             var desiredRoutes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var changed = false;
 
-            foreach (var configRoute in routes)
+            foreach (var incomingRoute in incomingRoutes)
             {
-                desiredRoutes.Add(configRoute.RouteId);
+                desiredRoutes.Add(incomingRoute.RouteId);
 
                 // Note that this can be null, and that is fine. The resulting route may match
                 // but would then fail to route, which is exactly what we were instructed to do in this case
                 // since no valid cluster was specified.
-                var cluster = _clusterManager.TryGetItem(configRoute.ClusterId ?? string.Empty);
+                _clusters.TryGetValue(incomingRoute.ClusterId ?? string.Empty, out var cluster);
 
-                _routeManager.GetOrCreateItem(
-                    itemId: configRoute.RouteId,
-                    setupAction: route =>
+                if (_routes.TryGetValue(incomingRoute.RouteId, out var currentRoute))
+                {
+                    if (currentRoute.Model.HasConfigChanged(incomingRoute, cluster, currentRoute.ClusterRevision))
                     {
-                        var currentRouteConfig = route.Config;
-                        if (currentRouteConfig == null ||
-                            currentRouteConfig.HasConfigChanged(configRoute, cluster))
-                        {
-                            // Config changed, so update runtime route
-                            changed = true;
-                            route.CachedEndpoint = null; // Recreate
-                            if (currentRouteConfig == null)
-                            {
-                                Log.RouteAdded(_logger, configRoute.RouteId);
-                            }
-                            else
-                            {
-                                Log.RouteChanged(_logger, configRoute.RouteId);
-                            }
-
-                            var newConfig = BuildRouteConfig(configRoute, cluster, route);
-                            route.Config = newConfig;
-                        }
-
-                        // Check for config changes to the cluster. We don't need a new RouteConfig, but we do need to regenerate
-                        // endpoints that may depend on cluster data.
-                        if (route.ClusterRevision != cluster?.Revision)
-                        {
-                            changed = true;
-                            route.CachedEndpoint = null; // Recreate
-                            route.ClusterRevision = cluster?.Revision;
-                        }
-                    });
+                        currentRoute.CachedEndpoint = null; // Recreate endpoint
+                        var newModel = BuildRouteModel(incomingRoute, cluster);
+                        currentRoute.Model = newModel;
+                        currentRoute.ClusterRevision = cluster?.Revision;
+                        changed = true;
+                        Log.RouteChanged(_logger, currentRoute.RouteId);
+                    }
+                }
+                else
+                {
+                    var newModel = BuildRouteModel(incomingRoute, cluster);
+                    var newState = new RouteState(incomingRoute.RouteId)
+                    {
+                        Model = newModel,
+                        ClusterRevision = cluster?.Revision,
+                    };
+                    var added = _routes.TryAdd(newState.RouteId, newState);
+                    Debug.Assert(added);
+                    changed = true;
+                    Log.RouteAdded(_logger, newState.RouteId);
+                }
             }
 
-            foreach (var existingRoute in _routeManager.GetItems())
+            // Directly enumerate the ConcurrentDictionary to limit locking and copying.
+            foreach (var existingRoutePair in _routes)
             {
-                if (!desiredRoutes.Contains(existingRoute.RouteId))
+                var routeId = existingRoutePair.Value.RouteId;
+                if (!desiredRoutes.Contains(routeId))
                 {
-                    // NOTE 1: This is safe to do within the `foreach` loop
-                    // because `IRouteManager.GetItems` returns a copy of the list of routes.
+                    // NOTE 1: Remove is safe to do within the `foreach` loop on ConcurrentDictionary
                     //
-                    // NOTE 2: Removing the route from `IRouteManager` is safe and existing
+                    // NOTE 2: Removing the route from _routes is safe and existing
                     // ASP .NET Core endpoints will continue to work with their existing behavior since
-                    // their copy of `RouteConfig` is immutable and remains operational in whichever state is was in.
-                    Log.RouteRemoved(_logger, existingRoute.RouteId);
-                    _routeManager.TryRemoveItem(existingRoute.RouteId);
+                    // their copy of `RouteModel` is immutable and remains operational in whichever state is was in.
+                    Log.RouteRemoved(_logger, routeId);
+                    var removed = _routes.TryRemove(routeId, out var _);
+                    Debug.Assert(removed);
                     changed = true;
                 }
             }
@@ -507,6 +544,7 @@ namespace Microsoft.ReverseProxy.Service.Management
         /// Applies a new set of ASP .NET Core endpoints. Changes take effect immediately.
         /// </summary>
         /// <param name="endpoints">New endpoints to apply.</param>
+        [MemberNotNull(nameof(_endpoints))]
         private void UpdateEndpoints(List<Endpoint> endpoints)
         {
             if (endpoints == null)
@@ -533,17 +571,11 @@ namespace Microsoft.ReverseProxy.Service.Management
             }
         }
 
-        private RouteConfig BuildRouteConfig(ProxyRoute source, ClusterInfo cluster, RouteInfo runtimeRoute)
+        private RouteModel BuildRouteModel(RouteConfig source, ClusterState? cluster)
         {
-            var transforms = _transformBuilder.Build(source.Transforms);
+            var transforms = _transformBuilder.Build(source, cluster?.Model?.Config);
 
-            var newRouteConfig = new RouteConfig(
-                runtimeRoute,
-                source,
-                cluster,
-                transforms);
-
-            return newRouteConfig;
+            return new RouteModel(source, cluster, transforms);
         }
 
         public void Dispose()
@@ -553,47 +585,47 @@ namespace Microsoft.ReverseProxy.Service.Management
 
         private static class Log
         {
-            private static readonly Action<ILogger, string, Exception> _clusterAdded = LoggerMessage.Define<string>(
+            private static readonly Action<ILogger, string, Exception?> _clusterAdded = LoggerMessage.Define<string>(
                   LogLevel.Debug,
                   EventIds.ClusterAdded,
                   "Cluster '{clusterId}' has been added.");
 
-            private static readonly Action<ILogger, string, Exception> _clusterChanged = LoggerMessage.Define<string>(
+            private static readonly Action<ILogger, string, Exception?> _clusterChanged = LoggerMessage.Define<string>(
                 LogLevel.Debug,
                 EventIds.ClusterChanged,
                 "Cluster '{clusterId}' has changed.");
 
-            private static readonly Action<ILogger, string, Exception> _clusterRemoved = LoggerMessage.Define<string>(
+            private static readonly Action<ILogger, string, Exception?> _clusterRemoved = LoggerMessage.Define<string>(
                 LogLevel.Debug,
                 EventIds.ClusterRemoved,
                 "Cluster '{clusterId}' has been removed.");
 
-            private static readonly Action<ILogger, string, Exception> _destinationAdded = LoggerMessage.Define<string>(
+            private static readonly Action<ILogger, string, Exception?> _destinationAdded = LoggerMessage.Define<string>(
                 LogLevel.Debug,
                 EventIds.DestinationAdded,
                 "Destination '{destinationId}' has been added.");
 
-            private static readonly Action<ILogger, string, Exception> _destinationChanged = LoggerMessage.Define<string>(
+            private static readonly Action<ILogger, string, Exception?> _destinationChanged = LoggerMessage.Define<string>(
                 LogLevel.Debug,
                 EventIds.DestinationChanged,
                 "Destination '{destinationId}' has changed.");
 
-            private static readonly Action<ILogger, string, Exception> _destinationRemoved = LoggerMessage.Define<string>(
+            private static readonly Action<ILogger, string, Exception?> _destinationRemoved = LoggerMessage.Define<string>(
                 LogLevel.Debug,
                 EventIds.DestinationRemoved,
                 "Destination '{destinationId}' has been removed.");
 
-            private static readonly Action<ILogger, string, Exception> _routeAdded = LoggerMessage.Define<string>(
+            private static readonly Action<ILogger, string, Exception?> _routeAdded = LoggerMessage.Define<string>(
                 LogLevel.Debug,
                 EventIds.RouteAdded,
                 "Route '{routeId}' has been added.");
 
-            private static readonly Action<ILogger, string, Exception> _routeChanged = LoggerMessage.Define<string>(
+            private static readonly Action<ILogger, string, Exception?> _routeChanged = LoggerMessage.Define<string>(
                 LogLevel.Debug,
                 EventIds.RouteChanged,
                 "Route '{routeId}' has changed.");
 
-            private static readonly Action<ILogger, string, Exception> _routeRemoved = LoggerMessage.Define<string>(
+            private static readonly Action<ILogger, string, Exception?> _routeRemoved = LoggerMessage.Define<string>(
                 LogLevel.Debug,
                 EventIds.RouteRemoved,
                 "Route '{routeId}' has been removed.");

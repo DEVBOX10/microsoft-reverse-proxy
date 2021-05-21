@@ -5,7 +5,7 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 
-namespace Microsoft.ReverseProxy.Service.Proxy
+namespace Yarp.ReverseProxy.Service.Proxy
 {
     public static class IHttpProxyExtensions
     {
@@ -15,13 +15,14 @@ namespace Microsoft.ReverseProxy.Service.Proxy
         /// <param name="context">The HttpContent to proxy from.</param>
         /// <param name="destinationPrefix">The url prefix for where to proxy the request to.</param>
         /// <param name="httpClient">The HTTP client used to send the proxy request.</param>
-        public static Task ProxyAsync(
+        /// <returns>The result of the request proxying to the destination.</returns>
+        public static ValueTask<ProxyError> ProxyAsync(
             this IHttpProxy proxy,
             HttpContext context,
             string destinationPrefix,
             HttpMessageInvoker httpClient)
         {
-            return proxy.ProxyAsync(context, destinationPrefix, httpClient, requestOptions: default, HttpTransformer.Default);
+            return proxy.ProxyAsync(context, destinationPrefix, httpClient, RequestProxyConfig.Empty, HttpTransformer.Default);
         }
 
         /// <summary>
@@ -30,15 +31,16 @@ namespace Microsoft.ReverseProxy.Service.Proxy
         /// <param name="context">The HttpContent to proxy from.</param>
         /// <param name="destinationPrefix">The url prefix for where to proxy the request to.</param>
         /// <param name="httpClient">The HTTP client used to send the proxy request.</param>
-        /// <param name="requestOptions">Options for the outgoing request.</param>
-        public static Task ProxyAsync(
+        /// <param name="requestConfig">Config for the outgoing request.</param>
+        /// <returns>The result of the request proxying to the destination.</returns>
+        public static ValueTask<ProxyError> ProxyAsync(
             this IHttpProxy proxy,
             HttpContext context,
             string destinationPrefix,
             HttpMessageInvoker httpClient,
-            RequestProxyOptions requestOptions)
+            RequestProxyConfig requestConfig)
         {
-            return proxy.ProxyAsync(context, destinationPrefix, httpClient, requestOptions, HttpTransformer.Default);
+            return proxy.ProxyAsync(context, destinationPrefix, httpClient, requestConfig, HttpTransformer.Default);
         }
     }
 }

@@ -4,9 +4,9 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using Microsoft.ReverseProxy.Abstractions;
+using Yarp.ReverseProxy.Abstractions;
 
-namespace Microsoft.ReverseProxy.Service
+namespace Yarp.ReverseProxy.Service
 {
     /// <summary>
     /// Provides methods to validate routes and clusters.
@@ -16,11 +16,11 @@ namespace Microsoft.ReverseProxy.Service
         /// <summary>
         /// Validates a route and returns all errors
         /// </summary>
-        ValueTask<IList<Exception>> ValidateRouteAsync(ProxyRoute route);
+        ValueTask<IList<Exception>> ValidateRouteAsync(RouteConfig route);
 
         /// <summary>
         /// Validates a cluster and returns all errors.
         /// </summary>
-        ValueTask<IList<Exception>> ValidateClusterAsync(Cluster cluster);
+        ValueTask<IList<Exception>> ValidateClusterAsync(ClusterConfig cluster);
     }
 }

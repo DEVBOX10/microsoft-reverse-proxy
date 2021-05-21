@@ -1,14 +1,21 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
+using System;
+
+namespace Yarp.ReverseProxy.Service.RuntimeModel.Transforms
 {
     public class QueryParameterFromStaticTransform : QueryParameterTransform
     {
         public QueryParameterFromStaticTransform(QueryStringTransformMode mode, string key, string value)
             : base(mode, key)
         {
-            Value = value;
+            if (string.IsNullOrEmpty(key))
+            {
+                throw new ArgumentException($"'{nameof(key)}' cannot be null or empty.", nameof(key));
+            }
+
+            Value = value ?? throw new ArgumentNullException(nameof(value));
         }
 
         internal string Value { get; }

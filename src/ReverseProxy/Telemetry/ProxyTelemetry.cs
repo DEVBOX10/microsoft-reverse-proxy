@@ -5,25 +5,25 @@ using System;
 using System.Diagnostics;
 using System.Diagnostics.Tracing;
 using System.Threading;
-using Microsoft.ReverseProxy.Service.Proxy;
+using Yarp.ReverseProxy.Service.Proxy;
 
-namespace Microsoft.ReverseProxy.Telemetry
+namespace Yarp.ReverseProxy.Telemetry
 {
     internal sealed class ProxyTelemetry : EventSource
     {
         public static readonly ProxyTelemetry Log = new ProxyTelemetry();
 
-        private IncrementingPollingCounter _startedRequestsPerSecondCounter;
-        private PollingCounter _startedRequestsCounter;
-        private PollingCounter _currentRequestsCounter;
-        private PollingCounter _failedRequestsCounter;
+        private IncrementingPollingCounter? _startedRequestsPerSecondCounter;
+        private PollingCounter? _startedRequestsCounter;
+        private PollingCounter? _currentRequestsCounter;
+        private PollingCounter? _failedRequestsCounter;
 
         private long _startedRequests;
         private long _stoppedRequests;
         private long _failedRequests;
 
         private ProxyTelemetry()
-            : base("Microsoft.ReverseProxy")
+            : base("Yarp.ReverseProxy")
         { }
 
         [Event(1, Level = EventLevel.Informational)]

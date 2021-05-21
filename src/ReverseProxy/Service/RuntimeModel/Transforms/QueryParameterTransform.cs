@@ -5,12 +5,17 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Primitives;
 
-namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
+namespace Yarp.ReverseProxy.Service.RuntimeModel.Transforms
 {
     public abstract class QueryParameterTransform : RequestTransform
     {
         public QueryParameterTransform(QueryStringTransformMode mode, string key)
         {
+            if (string.IsNullOrEmpty(key))
+            {
+                throw new ArgumentException($"'{nameof(key)}' cannot be null or empty.", nameof(key));
+            }
+
             Mode = mode;
             Key = key;
         }
@@ -20,7 +25,7 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
         internal string Key { get; }
 
         /// <inheritdoc/>
-        public override Task ApplyAsync(RequestTransformContext context)
+        public override ValueTask ApplyAsync(RequestTransformContext context)
         {
             if (context == null)
             {
@@ -28,7 +33,7 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
             }
 
             var value = GetValue(context);
-            if (!string.IsNullOrEmpty(value))
+            if (value != null)
             {
                 switch (Mode)
                 {
@@ -48,10 +53,10 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
                 }
             }
 
-            return Task.CompletedTask;
+            return default;
         }
 
-        protected abstract string GetValue(RequestTransformContext context);
+        protected abstract string? GetValue(RequestTransformContext context);
     }
 
     public enum QueryStringTransformMode

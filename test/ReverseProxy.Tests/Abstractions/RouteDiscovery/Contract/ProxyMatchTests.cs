@@ -4,14 +4,14 @@
 using System.Collections.Generic;
 using Xunit;
 
-namespace Microsoft.ReverseProxy.Abstractions.Tests
+namespace Yarp.ReverseProxy.Abstractions.Tests
 {
     public class ProxyMatchTests
     {
         [Fact]
         public void Equals_Positive()
         {
-            var a = new ProxyMatch()
+            var a = new RouteMatch()
             {
                 Headers = new[]
                 {
@@ -27,7 +27,7 @@ namespace Microsoft.ReverseProxy.Abstractions.Tests
                 Methods = new[] { "GET", "POST" },
                 Path = "/p",
             };
-            var b = new ProxyMatch()
+            var b = new RouteMatch()
             {
                 Headers = new[]
                 {
@@ -52,7 +52,7 @@ namespace Microsoft.ReverseProxy.Abstractions.Tests
         [Fact]
         public void Equals_Negative()
         {
-            var a = new ProxyMatch()
+            var a = new RouteMatch()
             {
                 Headers = new[]
                 {
@@ -94,7 +94,7 @@ namespace Microsoft.ReverseProxy.Abstractions.Tests
         [Fact]
         public void Equals_Null_False()
         {
-            Assert.False(new ProxyMatch().Equals(null));
+            Assert.False(new RouteMatch().Equals(null));
         }
     }
 }

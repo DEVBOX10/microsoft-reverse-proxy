@@ -3,9 +3,11 @@
 
 using System;
 using System.Collections.Generic;
-using Microsoft.ReverseProxy.Service.Proxy;
+using Yarp.ReverseProxy.Abstractions;
+using Yarp.ReverseProxy.Abstractions.Config;
+using Yarp.ReverseProxy.Service.Proxy;
 
-namespace Microsoft.ReverseProxy.Service
+namespace Yarp.ReverseProxy.Service
 {
     /// <summary>
     /// Validates and builds request and response transforms for a given route.
@@ -13,14 +15,21 @@ namespace Microsoft.ReverseProxy.Service
     public interface ITransformBuilder
     {
         /// <summary>
-        /// Validates that each transform is known and has the expected parameters. All transforms are validated and
+        /// Validates that each transform for the given route is known and has the expected parameters. All transforms are validated
         /// so all errors can be reported.
         /// </summary>
-        IList<Exception> Validate(IReadOnlyList<IReadOnlyDictionary<string, string>> transforms);
+        IReadOnlyList<Exception> ValidateRoute(RouteConfig route);
 
         /// <summary>
-        /// Builds the given transforms into executable rules.
+        /// Validates that any cluster data needed for transforms is valid.
         /// </summary>
-        HttpTransformer Build(IReadOnlyList<IReadOnlyDictionary<string, string>> rawTransforms);
+        IReadOnlyList<Exception> ValidateCluster(ClusterConfig cluster);
+
+        /// <summary>
+        /// Builds the transforms for the given route into executable rules.
+        /// </summary>
+        HttpTransformer Build(RouteConfig route, ClusterConfig? cluster);
+
+        HttpTransformer Create(Action<TransformBuilderContext> action);
     }
 }

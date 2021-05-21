@@ -1,55 +1,69 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+using System;
 using System.Security.Authentication;
-using Microsoft.ReverseProxy.Utilities.Tests;
+using System.Text;
 using Xunit;
+using Yarp.ReverseProxy.Utilities.Tests;
 
-namespace Microsoft.ReverseProxy.Abstractions.Tests
+namespace Yarp.ReverseProxy.Abstractions.Tests
 {
     public class ProxyHttpClientOptionsTests
     {
         [Fact]
         public void Equals_Same_Value_Returns_True()
         {
-            var options1 = new ProxyHttpClientOptions
+            var options1 = new HttpClientConfig
             {
                 SslProtocols = SslProtocols.Tls11,
                 DangerousAcceptAnyServerCertificate = false,
-                ClientCertificate = TestResources.GetTestCertificate(),
-                MaxConnectionsPerServer = 20
+                MaxConnectionsPerServer = 20,
+                WebProxy = new WebProxyConfig() { Address = new Uri("http://localhost:8080"), BypassOnLocal = true, UseDefaultCredentials = true },
+#if NET
+                RequestHeaderEncoding = Encoding.UTF8.WebName
+#endif
             };
 
-            var options2 = new ProxyHttpClientOptions
+            var options2 = new HttpClientConfig
             {
                 SslProtocols = SslProtocols.Tls11,
                 DangerousAcceptAnyServerCertificate = false,
-                ClientCertificate = TestResources.GetTestCertificate(),
-                MaxConnectionsPerServer = 20
+                MaxConnectionsPerServer = 20,
+                WebProxy = new WebProxyConfig() { Address = new Uri("http://localhost:8080"), BypassOnLocal = true, UseDefaultCredentials = true },
+#if NET
+                RequestHeaderEncoding = Encoding.UTF8.WebName
+#endif
             };
 
             var equals = options1.Equals(options2);
 
             Assert.True(equals);
+            Assert.True(options1 == options2);
+            Assert.False(options1 != options2);
         }
 
         [Fact]
         public void Equals_Different_Value_Returns_False()
         {
-            var options1 = new ProxyHttpClientOptions
+            var options1 = new HttpClientConfig
             {
                 SslProtocols = SslProtocols.Tls11,
                 DangerousAcceptAnyServerCertificate = false,
-                ClientCertificate = TestResources.GetTestCertificate(),
-                MaxConnectionsPerServer = 20
+                MaxConnectionsPerServer = 20,
+#if NET
+                RequestHeaderEncoding = Encoding.UTF8.WebName
+#endif
             };
 
-            var options2 = new ProxyHttpClientOptions
+            var options2 = new HttpClientConfig
             {
                 SslProtocols = SslProtocols.Tls12,
                 DangerousAcceptAnyServerCertificate = true,
-                ClientCertificate = TestResources.GetTestCertificate(),
-                MaxConnectionsPerServer = 20
+                MaxConnectionsPerServer = 20,
+#if NET
+                RequestHeaderEncoding = Encoding.Latin1.WebName
+#endif
             };
 
             var equals = options1.Equals(options2);
@@ -58,13 +72,52 @@ namespace Microsoft.ReverseProxy.Abstractions.Tests
         }
 
         [Fact]
+        public void Equals_Same_WebProxyAddress_Returns_True()
+        {
+            var options1 = new HttpClientConfig
+            {
+                WebProxy = new WebProxyConfig() { Address = new Uri("http://localhost:8080"), BypassOnLocal = true, UseDefaultCredentials = true }
+            };
+
+            var options2 = new HttpClientConfig
+            {
+                WebProxy = new WebProxyConfig() { Address = new Uri("http://localhost:8080"), BypassOnLocal = true, UseDefaultCredentials = true }
+            };
+
+            var equals = options1.Equals(options2);
+
+            Assert.True(equals);
+            Assert.True(options1 == options2);
+            Assert.False(options1 != options2);
+        }
+
+        [Fact]
+        public void Equals_Different_WebProxyAddress_Returns_False()
+        {
+            var options1 = new HttpClientConfig
+            {
+                WebProxy = new WebProxyConfig() { Address = new Uri("http://localhost:8080"), BypassOnLocal = true, UseDefaultCredentials = true }
+            };
+
+            var options2 = new HttpClientConfig
+            {
+                WebProxy = new WebProxyConfig() { Address = new Uri("http://localhost:9999"), BypassOnLocal = true, UseDefaultCredentials = true }
+            };
+
+            var equals = options1.Equals(options2);
+
+            Assert.False(equals);
+            Assert.True(options1 != options2);
+            Assert.False(options1 == options2);
+        }
+
+        [Fact]
         public void Equals_Second_Null_Returns_False()
         {
-            var options1 = new ProxyHttpClientOptions
+            var options1 = new HttpClientConfig
             {
                 SslProtocols = SslProtocols.Tls11,
                 DangerousAcceptAnyServerCertificate = false,
-                ClientCertificate = TestResources.GetTestCertificate(),
                 MaxConnectionsPerServer = 20
             };
 

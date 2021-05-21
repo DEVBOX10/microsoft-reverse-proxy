@@ -9,9 +9,9 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Routing.Matching;
 using Microsoft.Extensions.Primitives;
-using Microsoft.ReverseProxy.Abstractions;
+using Yarp.ReverseProxy.Abstractions;
 
-namespace Microsoft.ReverseProxy.Service.Routing
+namespace Yarp.ReverseProxy.Service.Routing
 {
     internal sealed class HeaderMatcherPolicy : MatcherPolicy, IEndpointComparerPolicy, IEndpointSelectorPolicy
     {
@@ -125,7 +125,7 @@ namespace Microsoft.ReverseProxy.Service.Routing
 
         private class HeaderMetadataEndpointComparer : EndpointMetadataComparer<IHeaderMetadata>
         {
-            protected override int CompareMetadata(IHeaderMetadata x, IHeaderMetadata y)
+            protected override int CompareMetadata(IHeaderMetadata? x, IHeaderMetadata? y)
             {
                 var xCount = x?.Matchers?.Count ?? 0;
                 var yCount = y?.Matchers?.Count ?? 0;

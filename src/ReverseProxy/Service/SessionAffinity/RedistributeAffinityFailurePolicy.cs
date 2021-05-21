@@ -4,18 +4,16 @@
 using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
-using Microsoft.ReverseProxy.Abstractions;
-using Microsoft.ReverseProxy.Abstractions.ClusterDiscovery.Contract;
-using Microsoft.ReverseProxy.RuntimeModel;
-using Microsoft.ReverseProxy.Utilities;
+using Yarp.ReverseProxy.Abstractions;
+using Yarp.ReverseProxy.Utilities;
 
-namespace Microsoft.ReverseProxy.Service.SessionAffinity
+namespace Yarp.ReverseProxy.Service.SessionAffinity
 {
-    internal class RedistributeAffinityFailurePolicy : IAffinityFailurePolicy
+    internal sealed class RedistributeAffinityFailurePolicy : IAffinityFailurePolicy
     {
         public string Name => SessionAffinityConstants.AffinityFailurePolicies.Redistribute;
 
-        public Task<bool> Handle(HttpContext context, SessionAffinityOptions options, AffinityStatus affinityStatus)
+        public Task<bool> Handle(HttpContext context, SessionAffinityConfig config, AffinityStatus affinityStatus)
         {
             if (affinityStatus == AffinityStatus.OK
                 || affinityStatus == AffinityStatus.AffinityKeyNotSet)

@@ -3,16 +3,15 @@
 
 using System.Collections.Generic;
 using Microsoft.AspNetCore.Http;
-using Microsoft.ReverseProxy.Abstractions.ClusterDiscovery.Contract;
-using Microsoft.ReverseProxy.RuntimeModel;
+using Yarp.ReverseProxy.RuntimeModel;
 
-namespace Microsoft.ReverseProxy.Service.LoadBalancing
+namespace Yarp.ReverseProxy.Service.LoadBalancing
 {
     internal sealed class FirstLoadBalancingPolicy : ILoadBalancingPolicy
     {
         public string Name => LoadBalancingPolicies.First;
 
-        public DestinationInfo PickDestination(HttpContext context, IReadOnlyList<DestinationInfo> availableDestinations)
+        public DestinationState? PickDestination(HttpContext context, IReadOnlyList<DestinationState> availableDestinations)
         {
             if (availableDestinations.Count == 0)
             {

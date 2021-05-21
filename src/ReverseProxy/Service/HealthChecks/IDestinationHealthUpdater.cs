@@ -3,9 +3,9 @@
 
 using System;
 using System.Collections.Generic;
-using Microsoft.ReverseProxy.RuntimeModel;
+using Yarp.ReverseProxy.RuntimeModel;
 
-namespace Microsoft.ReverseProxy.Service.HealthChecks
+namespace Yarp.ReverseProxy.Service.HealthChecks
 {
     /// <summary>
     /// Updates destinations' health states when it's requested by a health check policy
@@ -22,13 +22,13 @@ namespace Microsoft.ReverseProxy.Service.HealthChecks
         /// <param name="reactivationPeriod">If <paramref name="newHealth"/> is <see cref="DestinationHealth.Unhealthy"/>,
         /// this parameter specifies a reactivation period after which the destination's <see cref="DestinationHealthState.Passive"/> value
         /// will be reset to <see cref="DestinationHealth.Unknown"/>. Otherwise, it's not used.</param>
-        void SetPassive(ClusterInfo cluster, DestinationInfo destination, DestinationHealth newHealth, TimeSpan reactivationPeriod);
+        void SetPassive(ClusterState cluster, DestinationState destination, DestinationHealth newHealth, TimeSpan reactivationPeriod);
 
         /// <summary>
         /// Sets the active health values on the given destinations.
         /// </summary>
         /// <param name="cluster">Cluster.</param>
         /// <param name="newHealthStates">New active health states.</param>
-        void SetActive(ClusterInfo cluster, IEnumerable<NewActiveDestinationHealth> newHealthStates);
+        void SetActive(ClusterState cluster, IEnumerable<NewActiveDestinationHealth> newHealthStates);
     }
 }

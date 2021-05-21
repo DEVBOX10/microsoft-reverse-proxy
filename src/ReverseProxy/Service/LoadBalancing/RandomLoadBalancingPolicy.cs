@@ -3,11 +3,10 @@
 
 using System.Collections.Generic;
 using Microsoft.AspNetCore.Http;
-using Microsoft.ReverseProxy.Abstractions.ClusterDiscovery.Contract;
-using Microsoft.ReverseProxy.RuntimeModel;
-using Microsoft.ReverseProxy.Utilities;
+using Yarp.ReverseProxy.RuntimeModel;
+using Yarp.ReverseProxy.Utilities;
 
-namespace Microsoft.ReverseProxy.Service.LoadBalancing
+namespace Yarp.ReverseProxy.Service.LoadBalancing
 {
     internal sealed class RandomLoadBalancingPolicy : ILoadBalancingPolicy
     {
@@ -20,7 +19,7 @@ namespace Microsoft.ReverseProxy.Service.LoadBalancing
 
         public string Name => LoadBalancingPolicies.Random;
 
-        public DestinationInfo PickDestination(HttpContext context, IReadOnlyList<DestinationInfo> availableDestinations)
+        public DestinationState? PickDestination(HttpContext context, IReadOnlyList<DestinationState> availableDestinations)
         {
             if (availableDestinations.Count == 0)
             {

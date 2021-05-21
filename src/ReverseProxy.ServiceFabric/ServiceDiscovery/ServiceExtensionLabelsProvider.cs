@@ -11,10 +11,10 @@ using System.Xml;
 using System.Xml.Linq;
 using Microsoft.Extensions.Logging;
 
-namespace Microsoft.ReverseProxy.ServiceFabric
+namespace Yarp.ReverseProxy.ServiceFabric
 {
     /// <inheritdoc/>
-    internal class ServiceExtensionLabelsProvider : IServiceExtensionLabelsProvider
+    internal sealed class ServiceExtensionLabelsProvider : IServiceExtensionLabelsProvider
     {
         internal static readonly XNamespace XNSServiceManifest = "http://schemas.microsoft.com/2011/01/fabric";
         internal static readonly XNamespace XNSFabricNoSchema = "http://schemas.microsoft.com/2015/03/fabact-no-schema";
@@ -186,7 +186,7 @@ namespace Microsoft.ReverseProxy.ServiceFabric
         /// <summary>
         /// Gets the labels from the extensions of the provided raw service manifest.
         /// </summary>
-        private Dictionary<string, string> ExtractLabels(
+        private static Dictionary<string, string> ExtractLabels(
            string rawServiceManifest,
            string targetServiceTypeName)
         {
@@ -232,7 +232,7 @@ namespace Microsoft.ReverseProxy.ServiceFabric
                 LoggerMessage.Define<Uri, string, string, Uri, string, string>(
                     LogLevel.Information,
                     EventIds.InvalidApplicationParameter,
-                    "Application does not specify parameter referenced in a Service Manifest extension label. ApplicationName='{applicationName}', ApplicationtypeName='{app.ApplicationTypeName}', ApplicationTypeVersion='{applicationTypeVersion}', ServiceName='{serviceName}', Label='{label}', AppParamName='{appParamName}'.");
+                    "Application does not specify parameter referenced in a Service Manifest extension label. ApplicationName='{applicationName}', ApplicationtypeName='{applicationTypeName}', ApplicationTypeVersion='{applicationTypeVersion}', ServiceName='{serviceName}', Label='{label}', AppParamName='{appParamName}'.");
 
             public static void InvalidApplicationParameter(ILogger<ServiceExtensionLabelsProvider> logger, Uri applicationName, string applicationTypeName, string applicationTypeVersion, Uri serviceName, string label, string appParamName)
             {

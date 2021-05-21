@@ -3,11 +3,12 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.ReverseProxy.Utilities;
+using Yarp.ReverseProxy.Utilities;
 
-namespace Microsoft.ReverseProxy.Service.Management
+namespace Yarp.ReverseProxy.Service.Management
 {
     /// <summary>
     /// Periodically invokes specified actions on registered entities.
@@ -20,9 +21,9 @@ namespace Microsoft.ReverseProxy.Service.Management
     /// in "infinite run" entities get repeatedly rescheduled until either they are explicitly removed
     /// or the <see cref="EntityActionScheduler{T}"/> instance is disposed.
     /// </remarks>
-    internal class EntityActionScheduler<T> : IDisposable
+    internal sealed class EntityActionScheduler<T> : IDisposable where T : notnull
     {
-        private readonly ConcurrentDictionary<T, SchedulerEntry> _entries = new ConcurrentDictionary<T, SchedulerEntry>();
+        private readonly ConcurrentDictionary<T, SchedulerEntry> _entries = new();
         private readonly Func<T, Task> _action;
         private readonly bool _runOnce;
         private readonly ITimerFactory _timerFactory;
@@ -34,7 +35,7 @@ namespace Microsoft.ReverseProxy.Service.Management
             _action = action ?? throw new ArgumentNullException(nameof(action));
             _runOnce = runOnce;
             _timerFactory = timerFactory ?? throw new ArgumentNullException(nameof(timerFactory));
-            _timerCallback = async o => await Run(o);
+            _timerCallback = async o => await Run(o!);
             _isStarted = autoStart ? 1 : 0;
         }
 
@@ -62,7 +63,8 @@ namespace Microsoft.ReverseProxy.Service.Management
         public void ScheduleEntity(T entity, TimeSpan period)
         {
             var entry = new SchedulerEntry(entity, (long)period.TotalMilliseconds, _timerCallback, Volatile.Read(ref _isStarted) == 1, _timerFactory);
-            _entries.TryAdd(entity, entry);
+            var added = _entries.TryAdd(entity, entry);
+            Debug.Assert(added);
         }
 
         public void ChangePeriod(T entity, TimeSpan newPeriod)

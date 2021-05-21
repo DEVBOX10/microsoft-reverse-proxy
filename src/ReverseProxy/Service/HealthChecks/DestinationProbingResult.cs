@@ -3,18 +3,18 @@
 
 using System;
 using System.Net.Http;
-using Microsoft.ReverseProxy.RuntimeModel;
+using Yarp.ReverseProxy.RuntimeModel;
 
-namespace Microsoft.ReverseProxy.Service.HealthChecks
+namespace Yarp.ReverseProxy.Service.HealthChecks
 {
     /// <summary>
     /// Result of a destination's active health probing.
     /// </summary>
     public readonly struct DestinationProbingResult
     {
-        public DestinationProbingResult(DestinationInfo destination, HttpResponseMessage response, Exception exception)
+        public DestinationProbingResult(DestinationState destination, HttpResponseMessage? response, Exception? exception)
         {
-            Destination = destination;
+            Destination = destination ?? throw new ArgumentNullException(nameof(destination));
             Response = response;
             Exception = exception;
         }
@@ -22,18 +22,18 @@ namespace Microsoft.ReverseProxy.Service.HealthChecks
         /// <summary>
         /// Probed destination.
         /// </summary>
-        public DestinationInfo Destination { get; }
+        public DestinationState Destination { get; }
 
         /// <summary>
         /// Response recieved.
         /// It can be null in case of a failure.
         /// </summary>
-        public HttpResponseMessage Response { get; }
+        public HttpResponseMessage? Response { get; }
 
         /// <summary>
         /// Exception thrown during probing.
         /// It is null in case of a success.
         /// </summary>
-        public Exception Exception { get; }
+        public Exception? Exception { get; }
     }
 }

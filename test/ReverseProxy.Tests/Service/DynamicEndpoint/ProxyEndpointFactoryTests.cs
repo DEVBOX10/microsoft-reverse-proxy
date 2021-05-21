@@ -6,15 +6,16 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Cors;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Routing.Patterns;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.ReverseProxy.Abstractions;
-using Microsoft.ReverseProxy.RuntimeModel;
-using Microsoft.ReverseProxy.Service.Management;
-using Microsoft.ReverseProxy.Service.Proxy;
-using Microsoft.ReverseProxy.Service.Routing;
 using Xunit;
+using Yarp.ReverseProxy.Abstractions;
+using Yarp.ReverseProxy.RuntimeModel;
+using Yarp.ReverseProxy.Service.Management;
+using Yarp.ReverseProxy.Service.Proxy;
+using Yarp.ReverseProxy.Service.Routing;
 
-namespace Microsoft.ReverseProxy.Service.DynamicEndpoint
+namespace Yarp.ReverseProxy.Service.DynamicEndpoint
 {
     public class ProxyEndpointFactoryTests
     {
@@ -39,27 +40,27 @@ namespace Microsoft.ReverseProxy.Service.DynamicEndpoint
             var factory = services.GetRequiredService<ProxyEndpointFactory>();
             factory.SetProxyPipeline(context => Task.CompletedTask);
 
-            var route = new ProxyRoute
+            var route = new RouteConfig
             {
                 RouteId = "route1",
-                Match = new ProxyMatch
+                Match = new RouteMatch
                 {
                     Hosts = new[] { "example.com" },
                     Path = "/a",
                 },
                 Order = 12,
             };
-            var cluster = new ClusterInfo("cluster1", new DestinationManager());
-            var routeInfo = new RouteInfo("route1");
+            var cluster = new ClusterState("cluster1");
+            var routeState = new RouteState("route1");
 
-            var (routeEndpoint, routeConfig) = CreateEndpoint(factory, routeInfo, route, cluster);
+            var (routeEndpoint, routeConfig) = CreateEndpoint(factory, routeState, route, cluster);
 
             Assert.Same(cluster, routeConfig.Cluster);
             Assert.Equal("route1", routeEndpoint.DisplayName);
-            Assert.Same(routeConfig, routeEndpoint.Metadata.GetMetadata<RouteConfig>());
+            Assert.Same(routeConfig, routeEndpoint.Metadata.GetMetadata<RouteModel>());
             Assert.Equal("/a", routeEndpoint.RoutePattern.RawText);
             Assert.Equal(12, routeEndpoint.Order);
-            Assert.False(routeConfig.HasConfigChanged(route, cluster));
+            Assert.False(routeConfig.HasConfigChanged(route, cluster, routeState.ClusterRevision));
 
             var hostMetadata = routeEndpoint.Metadata.GetMetadata<HostAttribute>();
             Assert.NotNull(hostMetadata);
@@ -67,15 +68,16 @@ namespace Microsoft.ReverseProxy.Service.DynamicEndpoint
             Assert.Equal("example.com", hostMetadata.Hosts[0]);
         }
 
-        private (RouteEndpoint routeEndpoint, RouteConfig routeConfig) CreateEndpoint(ProxyEndpointFactory factory, RouteInfo routeInfo, ProxyRoute proxyRoute, ClusterInfo clusterInfo)
+        private (RouteEndpoint routeEndpoint, RouteModel routeConfig) CreateEndpoint(ProxyEndpointFactory factory, RouteState routeState, RouteConfig routeConfig, ClusterState clusterState)
         {
-            var routeConfig = new RouteConfig(routeInfo, proxyRoute, clusterInfo, HttpTransformer.Default);
+            routeState.ClusterRevision = clusterState.Revision;
+            var routeModel = new RouteModel(routeConfig, clusterState, HttpTransformer.Default);
 
-            var endpoint = factory.CreateEndpoint(routeConfig, Array.Empty<Action<EndpointBuilder>>());
+            var endpoint = factory.CreateEndpoint(routeModel, Array.Empty<Action<EndpointBuilder>>());
 
             var routeEndpoint = Assert.IsType<RouteEndpoint>(endpoint);
 
-            return (routeEndpoint, routeConfig);
+            return (routeEndpoint, routeModel);
         }
 
         [Fact]
@@ -85,26 +87,26 @@ namespace Microsoft.ReverseProxy.Service.DynamicEndpoint
             var factory = services.GetRequiredService<ProxyEndpointFactory>();
             factory.SetProxyPipeline(context => Task.CompletedTask);
 
-            var route = new ProxyRoute
+            var route = new RouteConfig
             {
                 RouteId = "route1",
-                Match = new ProxyMatch
+                Match = new RouteMatch
                 {
                     Hosts = new[] { "example.com" },
                 },
                 Order = 12,
             };
-            var cluster = new ClusterInfo("cluster1", new DestinationManager());
-            var routeInfo = new RouteInfo("route1");
+            var cluster = new ClusterState("cluster1");
+            var routeState = new RouteState("route1");
 
-            var (routeEndpoint, routeConfig) = CreateEndpoint(factory, routeInfo, route, cluster);
+            var (routeEndpoint, routeConfig) = CreateEndpoint(factory, routeState, route, cluster);
 
             Assert.Same(cluster, routeConfig.Cluster);
             Assert.Equal("route1", routeEndpoint.DisplayName);
-            Assert.Same(routeConfig, routeEndpoint.Metadata.GetMetadata<RouteConfig>());
+            Assert.Same(routeConfig, routeEndpoint.Metadata.GetMetadata<RouteModel>());
             Assert.Equal("/{**catchall}", routeEndpoint.RoutePattern.RawText);
             Assert.Equal(12, routeEndpoint.Order);
-            Assert.False(routeConfig.HasConfigChanged(route, cluster));
+            Assert.False(routeConfig.HasConfigChanged(route, cluster, routeState.ClusterRevision));
 
             var hostMetadata = routeEndpoint.Metadata.GetMetadata<HostAttribute>();
             Assert.NotNull(hostMetadata);
@@ -119,26 +121,26 @@ namespace Microsoft.ReverseProxy.Service.DynamicEndpoint
             var factory = services.GetRequiredService<ProxyEndpointFactory>();
             factory.SetProxyPipeline(context => Task.CompletedTask);
 
-            var route = new ProxyRoute
+            var route = new RouteConfig
             {
                 RouteId = "route1",
-                Match = new ProxyMatch
+                Match = new RouteMatch
                 {
                     Hosts = new[] { "*.example.com" },
                 },
                 Order = 12,
             };
-            var cluster = new ClusterInfo("cluster1", new DestinationManager());
-            var routeInfo = new RouteInfo("route1");
+            var cluster = new ClusterState("cluster1");
+            var routeState = new RouteState("route1");
 
-            var (routeEndpoint, routeConfig) = CreateEndpoint(factory, routeInfo, route, cluster);
+            var (routeEndpoint, routeConfig) = CreateEndpoint(factory, routeState, route, cluster);
 
             Assert.Same(cluster, routeConfig.Cluster);
             Assert.Equal("route1", routeEndpoint.DisplayName);
-            Assert.Same(routeConfig, routeEndpoint.Metadata.GetMetadata<RouteConfig>());
+            Assert.Same(routeConfig, routeEndpoint.Metadata.GetMetadata<RouteModel>());
             Assert.Equal("/{**catchall}", routeEndpoint.RoutePattern.RawText);
             Assert.Equal(12, routeEndpoint.Order);
-            Assert.False(routeConfig.HasConfigChanged(route, cluster));
+            Assert.False(routeConfig.HasConfigChanged(route, cluster, routeState.ClusterRevision));
 
             var hostMetadata = routeEndpoint.Metadata.GetMetadata<HostAttribute>();
             Assert.NotNull(hostMetadata);
@@ -153,26 +155,26 @@ namespace Microsoft.ReverseProxy.Service.DynamicEndpoint
             var factory = services.GetRequiredService<ProxyEndpointFactory>();
             factory.SetProxyPipeline(context => Task.CompletedTask);
 
-            var route = new ProxyRoute
+            var route = new RouteConfig
             {
                 RouteId = "route1",
-                Match = new ProxyMatch
+                Match = new RouteMatch
                 {
                     Path = "/a",
                 },
                 Order = 12,
             };
-            var cluster = new ClusterInfo("cluster1", new DestinationManager());
-            var routeInfo = new RouteInfo("route1");
+            var cluster = new ClusterState("cluster1");
+            var routeState = new RouteState("route1");
 
-            var (routeEndpoint, routeConfig) = CreateEndpoint(factory, routeInfo, route, cluster);
+            var (routeEndpoint, routeConfig) = CreateEndpoint(factory, routeState, route, cluster);
 
             Assert.Same(cluster, routeConfig.Cluster);
             Assert.Equal("route1", routeEndpoint.DisplayName);
-            Assert.Same(routeConfig, routeEndpoint.Metadata.GetMetadata<RouteConfig>());
+            Assert.Same(routeConfig, routeEndpoint.Metadata.GetMetadata<RouteModel>());
             Assert.Equal("/a", routeEndpoint.RoutePattern.RawText);
             Assert.Equal(12, routeEndpoint.Order);
-            Assert.False(routeConfig.HasConfigChanged(route, cluster));
+            Assert.False(routeConfig.HasConfigChanged(route, cluster, routeState.ClusterRevision));
 
             var hostMetadata = routeEndpoint.Metadata.GetMetadata<HostAttribute>();
             Assert.Null(hostMetadata);
@@ -185,23 +187,23 @@ namespace Microsoft.ReverseProxy.Service.DynamicEndpoint
             var factory = services.GetRequiredService<ProxyEndpointFactory>();
             factory.SetProxyPipeline(context => Task.CompletedTask);
 
-            var route = new ProxyRoute
+            var route = new RouteConfig
             {
                 RouteId = "route1",
                 Order = 12,
-                Match = new ProxyMatch()
+                Match = new RouteMatch()
             };
-            var cluster = new ClusterInfo("cluster1", new DestinationManager());
-            var routeInfo = new RouteInfo("route1");
+            var cluster = new ClusterState("cluster1");
+            var routeState = new RouteState("route1");
 
-            var (routeEndpoint, routeConfig) = CreateEndpoint(factory, routeInfo, route, cluster);
+            var (routeEndpoint, routeConfig) = CreateEndpoint(factory, routeState, route, cluster);
 
             Assert.Same(cluster, routeConfig.Cluster);
             Assert.Equal("route1", routeEndpoint.DisplayName);
-            Assert.Same(routeConfig, routeEndpoint.Metadata.GetMetadata<RouteConfig>());
+            Assert.Same(routeConfig, routeEndpoint.Metadata.GetMetadata<RouteModel>());
             Assert.Equal("/{**catchall}", routeEndpoint.RoutePattern.RawText);
             Assert.Equal(12, routeEndpoint.Order);
-            Assert.False(routeConfig.HasConfigChanged(route, cluster));
+            Assert.False(routeConfig.HasConfigChanged(route, cluster, routeState.ClusterRevision));
 
             var hostMetadata = routeEndpoint.Metadata.GetMetadata<HostAttribute>();
             Assert.Null(hostMetadata);
@@ -214,21 +216,21 @@ namespace Microsoft.ReverseProxy.Service.DynamicEndpoint
             var factory = services.GetRequiredService<ProxyEndpointFactory>();
             factory.SetProxyPipeline(context => Task.CompletedTask);
 
-            var route = new ProxyRoute
+            var route = new RouteConfig
             {
                 RouteId = "route1",
-                Match = new ProxyMatch
+                Match = new RouteMatch
                 {
                     Path = "/{invalid",
                 },
                 Order = 12,
             };
-            var cluster = new ClusterInfo("cluster1", new DestinationManager());
-            var routeInfo = new RouteInfo("route1");
+            var cluster = new ClusterState("cluster1");
+            var routeState = new RouteState("route1");
 
-            Action action = () => CreateEndpoint(factory, routeInfo, route, cluster);
+            Action action = () => CreateEndpoint(factory, routeState, route, cluster);
 
-            Assert.Throws<AspNetCore.Routing.Patterns.RoutePatternException>(action);
+            Assert.Throws<RoutePatternException>(action);
         }
 
         [Fact]
@@ -238,17 +240,17 @@ namespace Microsoft.ReverseProxy.Service.DynamicEndpoint
             var factory = services.GetRequiredService<ProxyEndpointFactory>();
             factory.SetProxyPipeline(context => Task.CompletedTask);
 
-            var route = new ProxyRoute
+            var route = new RouteConfig
             {
                 RouteId = "route1",
                 AuthorizationPolicy = "defaulT",
                 Order = 12,
-                Match = new ProxyMatch(),
+                Match = new RouteMatch(),
             };
-            var cluster = new ClusterInfo("cluster1", new DestinationManager());
-            var routeInfo = new RouteInfo("route1");
+            var cluster = new ClusterState("cluster1");
+            var routeState = new RouteState("route1");
 
-            var (routeEndpoint, _) = CreateEndpoint(factory, routeInfo, route, cluster);
+            var (routeEndpoint, _) = CreateEndpoint(factory, routeState, route, cluster);
 
             var attribute = Assert.IsType<AuthorizeAttribute>(routeEndpoint.Metadata.GetMetadata<IAuthorizeData>());
             Assert.Null(attribute.Policy);
@@ -261,17 +263,17 @@ namespace Microsoft.ReverseProxy.Service.DynamicEndpoint
             var factory = services.GetRequiredService<ProxyEndpointFactory>();
             factory.SetProxyPipeline(context => Task.CompletedTask);
 
-            var route = new ProxyRoute
+            var route = new RouteConfig
             {
                 RouteId = "route1",
                 AuthorizationPolicy = "AnonymouS",
                 Order = 12,
-                Match = new ProxyMatch(),
+                Match = new RouteMatch(),
             };
-            var cluster = new ClusterInfo("cluster1", new DestinationManager());
-            var routeInfo = new RouteInfo("route1");
+            var cluster = new ClusterState("cluster1");
+            var routeState = new RouteState("route1");
 
-            var (routeEndpoint, _) = CreateEndpoint(factory, routeInfo, route, cluster);
+            var (routeEndpoint, _) = CreateEndpoint(factory, routeState, route, cluster);
 
             Assert.IsType<AllowAnonymousAttribute>(routeEndpoint.Metadata.GetMetadata<IAllowAnonymous>());
         }
@@ -283,17 +285,17 @@ namespace Microsoft.ReverseProxy.Service.DynamicEndpoint
             var factory = services.GetRequiredService<ProxyEndpointFactory>();
             factory.SetProxyPipeline(context => Task.CompletedTask);
 
-            var route = new ProxyRoute
+            var route = new RouteConfig
             {
                 RouteId = "route1",
                 AuthorizationPolicy = "custom",
                 Order = 12,
-                Match = new ProxyMatch(),
+                Match = new RouteMatch(),
             };
-            var cluster = new ClusterInfo("cluster1", new DestinationManager());
-            var routeInfo = new RouteInfo("route1");
+            var cluster = new ClusterState("cluster1");
+            var routeState = new RouteState("route1");
 
-            var (routeEndpoint, _) = CreateEndpoint(factory, routeInfo, route, cluster);
+            var (routeEndpoint, _) = CreateEndpoint(factory, routeState, route, cluster);
 
             var attribute = Assert.IsType<AuthorizeAttribute>(routeEndpoint.Metadata.GetMetadata<IAuthorizeData>());
             Assert.Equal("custom", attribute.Policy);
@@ -306,16 +308,16 @@ namespace Microsoft.ReverseProxy.Service.DynamicEndpoint
             var factory = services.GetRequiredService<ProxyEndpointFactory>();
             factory.SetProxyPipeline(context => Task.CompletedTask);
 
-            var route = new ProxyRoute
+            var route = new RouteConfig
             {
                 RouteId = "route1",
                 Order = 12,
-                Match = new ProxyMatch(),
+                Match = new RouteMatch(),
             };
-            var cluster = new ClusterInfo("cluster1", new DestinationManager());
-            var routeInfo = new RouteInfo("route1");
+            var cluster = new ClusterState("cluster1");
+            var routeState = new RouteState("route1");
 
-            var (routeEndpoint, _) = CreateEndpoint(factory, routeInfo, route, cluster);
+            var (routeEndpoint, _) = CreateEndpoint(factory, routeState, route, cluster);
 
             Assert.Null(routeEndpoint.Metadata.GetMetadata<IAuthorizeData>());
             Assert.Null(routeEndpoint.Metadata.GetMetadata<IAllowAnonymous>());
@@ -328,17 +330,17 @@ namespace Microsoft.ReverseProxy.Service.DynamicEndpoint
             var factory = services.GetRequiredService<ProxyEndpointFactory>();
             factory.SetProxyPipeline(context => Task.CompletedTask);
 
-            var route = new ProxyRoute
+            var route = new RouteConfig
             {
                 RouteId = "route1",
                 CorsPolicy = "defaulT",
                 Order = 12,
-                Match = new ProxyMatch(),
+                Match = new RouteMatch(),
             };
-            var cluster = new ClusterInfo("cluster1", new DestinationManager());
-            var routeInfo = new RouteInfo("route1");
+            var cluster = new ClusterState("cluster1");
+            var routeState = new RouteState("route1");
 
-            var (routeEndpoint, _) = CreateEndpoint(factory, routeInfo, route, cluster);
+            var (routeEndpoint, _) = CreateEndpoint(factory, routeState, route, cluster);
 
             var attribute = Assert.IsType<EnableCorsAttribute>(routeEndpoint.Metadata.GetMetadata<IEnableCorsAttribute>());
             Assert.Null(attribute.PolicyName);
@@ -352,17 +354,17 @@ namespace Microsoft.ReverseProxy.Service.DynamicEndpoint
             var factory = services.GetRequiredService<ProxyEndpointFactory>();
             factory.SetProxyPipeline(context => Task.CompletedTask);
 
-            var route = new ProxyRoute
+            var route = new RouteConfig
             {
                 RouteId = "route1",
                 CorsPolicy = "custom",
                 Order = 12,
-                Match = new ProxyMatch(),
+                Match = new RouteMatch(),
             };
-            var cluster = new ClusterInfo("cluster1", new DestinationManager());
-            var routeInfo = new RouteInfo("route1");
+            var cluster = new ClusterState("cluster1");
+            var routeState = new RouteState("route1");
 
-            var (routeEndpoint, _) = CreateEndpoint(factory, routeInfo, route, cluster);
+            var (routeEndpoint, _) = CreateEndpoint(factory, routeState, route, cluster);
 
             var attribute = Assert.IsType<EnableCorsAttribute>(routeEndpoint.Metadata.GetMetadata<IEnableCorsAttribute>());
             Assert.Equal("custom", attribute.PolicyName);
@@ -376,17 +378,17 @@ namespace Microsoft.ReverseProxy.Service.DynamicEndpoint
             var factory = services.GetRequiredService<ProxyEndpointFactory>();
             factory.SetProxyPipeline(context => Task.CompletedTask);
 
-            var route = new ProxyRoute
+            var route = new RouteConfig
             {
                 RouteId = "route1",
                 CorsPolicy = "disAble",
                 Order = 12,
-                Match = new ProxyMatch(),
+                Match = new RouteMatch(),
             };
-            var cluster = new ClusterInfo("cluster1", new DestinationManager());
-            var routeInfo = new RouteInfo("route1");
+            var cluster = new ClusterState("cluster1");
+            var routeState = new RouteState("route1");
 
-            var (routeEndpoint, _) = CreateEndpoint(factory, routeInfo, route, cluster);
+            var (routeEndpoint, _) = CreateEndpoint(factory, routeState, route, cluster);
 
             Assert.IsType<DisableCorsAttribute>(routeEndpoint.Metadata.GetMetadata<IDisableCorsAttribute>());
             Assert.Null(routeEndpoint.Metadata.GetMetadata<IEnableCorsAttribute>());
@@ -399,16 +401,16 @@ namespace Microsoft.ReverseProxy.Service.DynamicEndpoint
             var factory = services.GetRequiredService<ProxyEndpointFactory>();
             factory.SetProxyPipeline(context => Task.CompletedTask);
 
-            var route = new ProxyRoute
+            var route = new RouteConfig
             {
                 RouteId = "route1",
                 Order = 12,
-                Match = new ProxyMatch(),
+                Match = new RouteMatch(),
             };
-            var cluster = new ClusterInfo("cluster1", new DestinationManager());
-            var routeInfo = new RouteInfo("route1");
+            var cluster = new ClusterState("cluster1");
+            var routeState = new RouteState("route1");
 
-            var (routeEndpoint, _) = CreateEndpoint(factory, routeInfo, route, cluster);
+            var (routeEndpoint, _) = CreateEndpoint(factory, routeState, route, cluster);
 
             Assert.Null(routeEndpoint.Metadata.GetMetadata<IEnableCorsAttribute>());
             Assert.Null(routeEndpoint.Metadata.GetMetadata<IDisableCorsAttribute>());
@@ -421,10 +423,10 @@ namespace Microsoft.ReverseProxy.Service.DynamicEndpoint
             var factory = services.GetRequiredService<ProxyEndpointFactory>();
             factory.SetProxyPipeline(context => Task.CompletedTask);
 
-            var route = new ProxyRoute
+            var route = new RouteConfig
             {
                 RouteId = "route1",
-                Match = new ProxyMatch
+                Match = new RouteMatch
                 {
                     Path = "/",
                     Headers = new[]
@@ -439,10 +441,10 @@ namespace Microsoft.ReverseProxy.Service.DynamicEndpoint
                     }
                 },
             };
-            var cluster = new ClusterInfo("cluster1", new DestinationManager());
-            var routeInfo = new RouteInfo("route1");
+            var cluster = new ClusterState("cluster1");
+            var routeState = new RouteState("route1");
 
-            var (routeEndpoint, routeConfig) = CreateEndpoint(factory, routeInfo, route, cluster);
+            var (routeEndpoint, routeConfig) = CreateEndpoint(factory, routeState, route, cluster);
 
             Assert.Same(cluster, routeConfig.Cluster);
             Assert.Equal("route1", routeEndpoint.DisplayName);
@@ -456,7 +458,7 @@ namespace Microsoft.ReverseProxy.Service.DynamicEndpoint
             Assert.Equal(HeaderMatchMode.HeaderPrefix, matcher.Mode);
             Assert.True(matcher.IsCaseSensitive);
 
-            Assert.False(routeConfig.HasConfigChanged(route, cluster));
+            Assert.False(routeConfig.HasConfigChanged(route, cluster, routeState.ClusterRevision));
         }
 
         [Fact]
@@ -466,10 +468,10 @@ namespace Microsoft.ReverseProxy.Service.DynamicEndpoint
             var factory = services.GetRequiredService<ProxyEndpointFactory>();
             factory.SetProxyPipeline(context => Task.CompletedTask);
 
-            var route = new ProxyRoute
+            var route = new RouteConfig
             {
                 RouteId = "route1",
-                Match = new ProxyMatch
+                Match = new RouteMatch
                 {
                     Path = "/",
                     Headers = new[]
@@ -489,10 +491,10 @@ namespace Microsoft.ReverseProxy.Service.DynamicEndpoint
                     }
                 },
             };
-            var cluster = new ClusterInfo("cluster1", new DestinationManager());
-            var routeInfo = new RouteInfo("route1");
+            var cluster = new ClusterState("cluster1");
+            var routeState = new RouteState("route1");
 
-            var (routeEndpoint, routeConfig) = CreateEndpoint(factory, routeInfo, route, cluster);
+            var (routeEndpoint, routeConfig) = CreateEndpoint(factory, routeState, route, cluster);
 
             Assert.Same(cluster, routeConfig.Cluster);
             Assert.Equal("route1", routeEndpoint.DisplayName);
@@ -509,11 +511,11 @@ namespace Microsoft.ReverseProxy.Service.DynamicEndpoint
             var secondMetadata = metadata.Matchers.Skip(1).Single();
             Assert.NotNull(secondMetadata);
             Assert.Equal("header2", secondMetadata.Name);
-            Assert.Null(secondMetadata.Values);
+            Assert.Same(Array.Empty<string>(), secondMetadata.Values);
             Assert.Equal(HeaderMatchMode.Exists, secondMetadata.Mode);
             Assert.False(secondMetadata.IsCaseSensitive);
 
-            Assert.False(routeConfig.HasConfigChanged(route, cluster));
+            Assert.False(routeConfig.HasConfigChanged(route, cluster, routeState.ClusterRevision));
         }
     }
 }

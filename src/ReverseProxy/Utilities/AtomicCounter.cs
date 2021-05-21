@@ -3,9 +3,9 @@
 
 using System.Threading;
 
-namespace Microsoft.ReverseProxy.Utilities
+namespace Yarp.ReverseProxy.Utilities
 {
-    internal class AtomicCounter
+    internal sealed class AtomicCounter
     {
         private int _value;
 

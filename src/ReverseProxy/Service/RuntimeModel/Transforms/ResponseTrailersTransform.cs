@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Primitives;
 
-namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
+namespace Yarp.ReverseProxy.Service.RuntimeModel.Transforms
 {
     /// <summary>
     /// Transforms for response trailers.
@@ -19,7 +19,7 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
         /// Transforms the given response trailers. The trailers will have (optionally) already been
         /// copied to the <see cref="HttpResponse"/> and any changes should be made there.
         /// </summary>
-        public abstract Task ApplyAsync(ResponseTrailersTransformContext context);
+        public abstract ValueTask ApplyAsync(ResponseTrailersTransformContext context);
 
         /// <summary>
         /// Removes and returns the current trailer value by first checking the HttpResponse
@@ -31,6 +31,16 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
         /// <returns>The response header value, or StringValues.Empty if none.</returns>
         public static StringValues TakeHeader(ResponseTrailersTransformContext context, string headerName)
         {
+            if (context is null)
+            {
+                throw new System.ArgumentNullException(nameof(context));
+            }
+
+            if (string.IsNullOrEmpty(headerName))
+            {
+                throw new System.ArgumentException($"'{nameof(headerName)}' cannot be null or empty.", nameof(headerName));
+            }
+
             var existingValues = StringValues.Empty;
             var responseTrailersFeature = context.HttpContext.Features.Get<IHttpResponseTrailersFeature>();
             var responseTrailers = responseTrailersFeature.Trailers;
@@ -64,6 +74,12 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
             Debug.Assert(!responseTrailers.IsReadOnly);
 
             responseTrailers[headerName] = values;
+        }
+
+        internal static bool Success(ResponseTrailersTransformContext context)
+        {
+            // TODO: How complex should this get? Compare with http://nginx.org/en/docs/http/ngx_http_headers_module.html#add_header
+            return context.HttpContext.Response.StatusCode < 400;
         }
     }
 }

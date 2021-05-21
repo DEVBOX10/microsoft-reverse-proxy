@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Primitives;
 
-namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
+namespace Yarp.ReverseProxy.Service.RuntimeModel.Transforms
 {
     /// <summary>
     /// Transforms for responses.
@@ -17,7 +17,7 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
         /// Transforms the given response. The status and headers will have (optionally) already been
         /// copied to the <see cref="HttpResponse"/> and any changes should be made there.
         /// </summary>
-        public abstract Task ApplyAsync(ResponseTransformContext context);
+        public abstract ValueTask ApplyAsync(ResponseTransformContext context);
 
         /// <summary>
         /// Removes and returns the current header value by first checking the HttpResponse
@@ -29,6 +29,16 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
         /// <returns>The response header value, or StringValues.Empty if none.</returns>
         public static StringValues TakeHeader(ResponseTransformContext context, string headerName)
         {
+            if (context is null)
+            {
+                throw new System.ArgumentNullException(nameof(context));
+            }
+
+            if (string.IsNullOrEmpty(headerName))
+            {
+                throw new System.ArgumentException($"'{nameof(headerName)}' cannot be null or empty.", nameof(headerName));
+            }
+
             var existingValues = StringValues.Empty;
             if (context.HttpContext.Response.Headers.TryGetValue(headerName, out var responseValues))
             {
@@ -51,6 +61,12 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
         public static void SetHeader(ResponseTransformContext context, string headerName, StringValues values)
         {
             context.HttpContext.Response.Headers[headerName] = values;
+        }
+
+        internal static bool Success(ResponseTransformContext context)
+        {
+            // TODO: How complex should this get? Compare with http://nginx.org/en/docs/http/ngx_http_headers_module.html#add_header
+            return context.HttpContext.Response.StatusCode < 400;
         }
     }
 }

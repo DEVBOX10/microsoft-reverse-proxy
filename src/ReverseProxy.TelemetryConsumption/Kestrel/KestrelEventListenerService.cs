@@ -3,55 +3,30 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Diagnostics.Tracing;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace Microsoft.ReverseProxy.Telemetry.Consumption
+namespace Yarp.ReverseProxy.Telemetry.Consumption
 {
-    internal sealed class KestrelEventListenerService : EventListener, IHostedService
-    {
-#if NET5_0
-        private readonly ILogger<KestrelEventListenerService> _logger;
-        private readonly IServiceProvider _serviceProvider;
-        private readonly IHttpContextAccessor _httpContextAccessor;
-
-        private KestrelMetrics _previousMetrics;
-        private KestrelMetrics _currentMetrics = new();
-        private int _eventCountersCount;
-
-        public KestrelEventListenerService(ILogger<KestrelEventListenerService> logger, IServiceProvider serviceProvider, IHttpContextAccessor httpContextAccessor)
-        {
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
-            _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
-        }
-#else
-        private readonly IHttpContextAccessor _httpContextAccessor;
-
-        public KestrelEventListenerService(IHttpContextAccessor httpContextAccessor)
-        {
-            _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
-        }
+#if !NET
+    internal interface IKestrelMetricsConsumer { }
 #endif
 
-        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    internal sealed class KestrelEventListenerService : EventListenerService<KestrelEventListenerService, IKestrelTelemetryConsumer, IKestrelMetricsConsumer>
+    {
+#if NET
+        private KestrelMetrics? _previousMetrics;
+        private KestrelMetrics _currentMetrics = new();
+        private int _eventCountersCount;
+#endif
 
-        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        protected override string EventSourceName => "Microsoft-AspNetCore-Server-Kestrel";
 
-        protected override void OnEventSourceCreated(EventSource eventSource)
-        {
-            if (eventSource.Name == "Microsoft-AspNetCore-Server-Kestrel")
-            {
-                var arguments = new Dictionary<string, string> { { "EventCounterIntervalSec", MetricsOptions.Interval.TotalSeconds.ToString() } };
-                EnableEvents(eventSource, EventLevel.LogAlways, EventKeywords.None, arguments);
-            }
-        }
+        public KestrelEventListenerService(ILogger<KestrelEventListenerService> logger, IEnumerable<IKestrelTelemetryConsumer> telemetryConsumers, IEnumerable<IKestrelMetricsConsumer> metricsConsumers)
+            : base(logger, telemetryConsumers, metricsConsumers)
+        { }
 
         protected override void OnEventWritten(EventWrittenEventArgs eventData)
         {
@@ -60,7 +35,7 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
 
             if (eventData.EventId < MinEventId || eventData.EventId > MaxEventId)
             {
-#if NET5_0
+#if NET
                 if (eventData.EventId == -1)
                 {
                     OnEventCounters(eventData);
@@ -70,22 +45,17 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
                 return;
             }
 
-            var context = _httpContextAccessor?.HttpContext;
-            if (context is null)
+            if (TelemetryConsumers is null)
             {
                 return;
             }
 
-            using var consumers = context.RequestServices.GetServices<IKestrelTelemetryConsumer>().GetEnumerator();
+#pragma warning disable IDE0007 // Use implicit type
+            // Explicit type here to drop the object? signature of payload elements
+            ReadOnlyCollection<object> payload = eventData.Payload!;
+#pragma warning restore IDE0007 // Use implicit type
 
-            if (!consumers.MoveNext())
-            {
-                return;
-            }
-
-            var payload = eventData.Payload;
-
-#if NET5_0
+#if NET
             switch (eventData.EventId)
             {
                 case 3:
@@ -96,11 +66,10 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
                         var httpVersion = (string)payload[2];
                         var path = (string)payload[3];
                         var method = (string)payload[4];
-                        do
+                        foreach (var consumer in TelemetryConsumers)
                         {
-                            consumers.Current.OnRequestStart(eventData.TimeStamp, connectionId, requestId, httpVersion, path, method);
+                            consumer.OnRequestStart(eventData.TimeStamp, connectionId, requestId, httpVersion, path, method);
                         }
-                        while (consumers.MoveNext());
                     }
                     break;
 
@@ -112,11 +81,10 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
                         var httpVersion = (string)payload[2];
                         var path = (string)payload[3];
                         var method = (string)payload[4];
-                        do
+                        foreach (var consumer in TelemetryConsumers)
                         {
-                            consumers.Current.OnRequestStop(eventData.TimeStamp, connectionId, requestId, httpVersion, path, method);
+                            consumer.OnRequestStop(eventData.TimeStamp, connectionId, requestId, httpVersion, path, method);
                         }
-                        while (consumers.MoveNext());
                     }
                     break;
             }
@@ -128,11 +96,10 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
                     {
                         var connectionId = (string)payload[0];
                         var requestId = (string)payload[1];
-                        do
+                        foreach (var consumer in TelemetryConsumers)
                         {
-                            consumers.Current.OnRequestStart(eventData.TimeStamp, connectionId, requestId);
+                            consumer.OnRequestStart(eventData.TimeStamp, connectionId, requestId);
                         }
-                        while (consumers.MoveNext());
                     }
                     break;
 
@@ -141,22 +108,26 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
                     {
                         var connectionId = (string)payload[0];
                         var requestId = (string)payload[1];
-                        do
+                        foreach (var consumer in TelemetryConsumers)
                         {
-                            consumers.Current.OnRequestStop(eventData.TimeStamp, connectionId, requestId);
+                            consumer.OnRequestStop(eventData.TimeStamp, connectionId, requestId);
                         }
-                        while (consumers.MoveNext());
                     }
                     break;
             }
 #endif
         }
 
-#if NET5_0
+#if NET
         private void OnEventCounters(EventWrittenEventArgs eventData)
         {
-            Debug.Assert(eventData.EventName == "EventCounters" && eventData.Payload.Count == 1);
-            var counters = (IDictionary<string, object>)eventData.Payload[0];
+            if (MetricsConsumers is null)
+            {
+                return;
+            }
+
+            Debug.Assert(eventData.EventName == "EventCounters" && eventData.Payload!.Count == 1);
+            var counters = (IDictionary<string, object>)eventData.Payload[0]!;
 
             if (!counters.TryGetValue("Mean", out var valueObj))
             {
@@ -224,14 +195,14 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
                 _previousMetrics = metrics;
                 _currentMetrics = new KestrelMetrics();
 
-                if (previous is null || _serviceProvider is null)
+                if (previous is null)
                 {
                     return;
                 }
 
                 try
                 {
-                    foreach (var consumer in _serviceProvider.GetServices<IKestrelMetricsConsumer>())
+                    foreach (var consumer in MetricsConsumers)
                     {
                         consumer.OnKestrelMetrics(previous, metrics);
                     }
@@ -239,7 +210,7 @@ namespace Microsoft.ReverseProxy.Telemetry.Consumption
                 catch (Exception ex)
                 {
                     // We can't let an uncaught exception propagate as that would crash the process
-                    _logger.LogError(ex, $"Uncaught exception occured while processing {nameof(KestrelMetrics)}.");
+                    Logger.LogError(ex, $"Uncaught exception occured while processing {nameof(KestrelMetrics)}.");
                 }
             }
         }

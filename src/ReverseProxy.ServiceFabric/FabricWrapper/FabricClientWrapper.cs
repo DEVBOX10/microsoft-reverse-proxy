@@ -4,9 +4,9 @@
 using System;
 using System.Fabric;
 
-namespace Microsoft.ReverseProxy.ServiceFabric
+namespace Yarp.ReverseProxy.ServiceFabric
 {
-    internal class FabricClientWrapper : IFabricClientWrapper, IDisposable
+    internal sealed class FabricClientWrapper : IFabricClientWrapper, IDisposable
     {
         public FabricClientWrapper()
         {

@@ -3,62 +3,48 @@
 
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Net.Http;
 using System.Security.Authentication;
-using System.Security.Cryptography.X509Certificates;
 using System.Threading;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
-using Microsoft.ReverseProxy.Abstractions;
-using Microsoft.ReverseProxy.Service;
-using Microsoft.ReverseProxy.Service.Proxy;
+using Yarp.ReverseProxy.Abstractions;
+using Yarp.ReverseProxy.Service;
+using Yarp.ReverseProxy.Service.Proxy;
 
-namespace Microsoft.ReverseProxy.Configuration
+namespace Yarp.ReverseProxy.Configuration
 {
     /// <summary>
     /// Reacts to configuration changes and applies configurations to the Reverse Proxy core.
     /// When configs are loaded from appsettings.json, this takes care of hot updates
     /// when appsettings.json is modified on disk.
     /// </summary>
-    internal class ConfigurationConfigProvider : IProxyConfigProvider, IDisposable
+    internal sealed class ConfigurationConfigProvider : IProxyConfigProvider, IDisposable
     {
         private readonly object _lockObject = new object();
         private readonly ILogger<ConfigurationConfigProvider> _logger;
         private readonly IConfiguration _configuration;
-        private readonly ICertificateConfigLoader _certificateConfigLoader;
-        private ConfigurationSnapshot _snapshot;
-        private CancellationTokenSource _changeToken;
+        private ConfigurationSnapshot? _snapshot;
+        private CancellationTokenSource? _changeToken;
         private bool _disposed;
-        private IDisposable _subscription;
+        private IDisposable? _subscription;
 
         public ConfigurationConfigProvider(
             ILogger<ConfigurationConfigProvider> logger,
-            IConfiguration configuration,
-            ICertificateConfigLoader certificateConfigLoader)
+            IConfiguration configuration)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
-            _certificateConfigLoader = certificateConfigLoader ?? throw new ArgumentNullException(nameof(certificateConfigLoader));
         }
-
-        // Used by tests
-        internal LinkedList<WeakReference<X509Certificate2>> Certificates { get; } = new LinkedList<WeakReference<X509Certificate2>>();
 
         public void Dispose()
         {
             if (!_disposed)
             {
-                foreach (var certificateRef in Certificates)
-                {
-                    if (certificateRef.TryGetTarget(out var certificate))
-                    {
-                        certificate.Dispose();
-                    }
-                }
-
                 _subscription?.Dispose();
                 _changeToken?.Dispose();
                 _disposed = true;
@@ -73,16 +59,18 @@ namespace Microsoft.ReverseProxy.Configuration
                 _subscription = ChangeToken.OnChange(_configuration.GetReloadToken, UpdateSnapshot);
                 UpdateSnapshot();
             }
+
             return _snapshot;
         }
 
+        [MemberNotNull(nameof(_snapshot))]
         private void UpdateSnapshot()
         {
             // Prevent overlapping updates, especially on startup.
             lock (_lockObject)
             {
                 Log.LoadData(_logger);
-                ConfigurationSnapshot newSnapshot = null;
+                ConfigurationSnapshot newSnapshot;
                 try
                 {
                     newSnapshot = new ConfigurationSnapshot();
@@ -96,8 +84,6 @@ namespace Microsoft.ReverseProxy.Configuration
                     {
                         newSnapshot.Routes.Add(CreateRoute(section));
                     }
-
-                    PurgeCertificateList();
                 }
                 catch (Exception ex)
                 {
@@ -128,58 +114,43 @@ namespace Microsoft.ReverseProxy.Configuration
             }
         }
 
-        private void PurgeCertificateList()
+        private ClusterConfig CreateCluster(IConfigurationSection section)
         {
-            var next = Certificates.First;
-            while (next != null)
-            {
-                var current = next;
-                next = next.Next;
-                // Remove a certificate from the collection if either it has been already collected or at least disposed.
-                if (!current.Value.TryGetTarget(out var cert) || cert.Handle == default)
-                {
-                    Certificates.Remove(current);
-                }
-            }
-        }
-
-        private Cluster CreateCluster(IConfigurationSection section)
-        {
-            var destinations = new Dictionary<string, Destination>(StringComparer.OrdinalIgnoreCase);
-            foreach (var destination in section.GetSection(nameof(Cluster.Destinations)).GetChildren())
+            var destinations = new Dictionary<string, DestinationConfig>(StringComparer.OrdinalIgnoreCase);
+            foreach (var destination in section.GetSection(nameof(ClusterConfig.Destinations)).GetChildren())
             {
                 destinations.Add(destination.Key, CreateDestination(destination));
             }
 
-            return new Cluster
+            return new ClusterConfig
             {
-                Id = section.Key,
-                LoadBalancingPolicy = section[nameof(Cluster.LoadBalancingPolicy)],
-                SessionAffinity = CreateSessionAffinityOptions(section.GetSection(nameof(Cluster.SessionAffinity))),
-                HealthCheck = CreateHealthCheckOptions(section.GetSection(nameof(Cluster.HealthCheck))),
-                HttpClient = CreateProxyHttpClientOptions(section.GetSection(nameof(Cluster.HttpClient))),
-                HttpRequest = CreateProxyRequestOptions(section.GetSection(nameof(Cluster.HttpRequest))),
-                Metadata = section.GetSection(nameof(Cluster.Metadata)).ReadStringDictionary(),
+                ClusterId = section.Key,
+                LoadBalancingPolicy = section[nameof(ClusterConfig.LoadBalancingPolicy)],
+                SessionAffinity = CreateSessionAffinityConfig(section.GetSection(nameof(ClusterConfig.SessionAffinity))),
+                HealthCheck = CreateHealthCheckConfig(section.GetSection(nameof(ClusterConfig.HealthCheck))),
+                HttpClient = CreateHttpClientConfig(section.GetSection(nameof(ClusterConfig.HttpClient))),
+                HttpRequest = CreateProxyRequestConfig(section.GetSection(nameof(ClusterConfig.HttpRequest))),
+                Metadata = section.GetSection(nameof(ClusterConfig.Metadata)).ReadStringDictionary(),
                 Destinations = destinations,
             };
         }
 
-        private static ProxyRoute CreateRoute(IConfigurationSection section)
+        private static RouteConfig CreateRoute(IConfigurationSection section)
         {
-            return new ProxyRoute
+            return new RouteConfig
             {
-                RouteId = section[nameof(ProxyRoute.RouteId)],
-                Order = section.ReadInt32(nameof(ProxyRoute.Order)),
-                ClusterId = section[nameof(ProxyRoute.ClusterId)],
-                AuthorizationPolicy = section[nameof(ProxyRoute.AuthorizationPolicy)],
-                CorsPolicy = section[nameof(ProxyRoute.CorsPolicy)],
-                Metadata = section.GetSection(nameof(ProxyRoute.Metadata)).ReadStringDictionary(),
-                Transforms = CreateTransforms(section.GetSection(nameof(ProxyRoute.Transforms))),
-                Match = CreateProxyMatch(section.GetSection(nameof(ProxyRoute.Match))),
+                RouteId = section.Key,
+                Order = section.ReadInt32(nameof(RouteConfig.Order)),
+                ClusterId = section[nameof(RouteConfig.ClusterId)],
+                AuthorizationPolicy = section[nameof(RouteConfig.AuthorizationPolicy)],
+                CorsPolicy = section[nameof(RouteConfig.CorsPolicy)],
+                Metadata = section.GetSection(nameof(RouteConfig.Metadata)).ReadStringDictionary(),
+                Transforms = CreateTransforms(section.GetSection(nameof(RouteConfig.Transforms))),
+                Match = CreateRouteMatch(section.GetSection(nameof(RouteConfig.Match))),
             };
         }
 
-        private static IReadOnlyList<IReadOnlyDictionary<string, string>> CreateTransforms(IConfigurationSection section)
+        private static IReadOnlyList<IReadOnlyDictionary<string, string>>? CreateTransforms(IConfigurationSection section)
         {
             if (section.GetChildren() is var children && !children.Any())
             {
@@ -190,23 +161,23 @@ namespace Microsoft.ReverseProxy.Configuration
                     subSection.GetChildren().ToDictionary(d => d.Key, d => d.Value, StringComparer.OrdinalIgnoreCase)).ToList();
         }
 
-        private static ProxyMatch CreateProxyMatch(IConfigurationSection section)
+        private static RouteMatch CreateRouteMatch(IConfigurationSection section)
         {
             if (!section.Exists())
             {
-                return null;
+                return new RouteMatch();
             }
 
-            return new ProxyMatch()
+            return new RouteMatch()
             {
-                Methods = section.GetSection(nameof(ProxyMatch.Methods)).ReadStringArray(),
-                Hosts = section.GetSection(nameof(ProxyMatch.Hosts)).ReadStringArray(),
-                Path = section[nameof(ProxyMatch.Path)],
-                Headers = CreateRouteHeaders(section.GetSection(nameof(ProxyMatch.Headers))),
+                Methods = section.GetSection(nameof(RouteMatch.Methods)).ReadStringArray(),
+                Hosts = section.GetSection(nameof(RouteMatch.Hosts)).ReadStringArray(),
+                Path = section[nameof(RouteMatch.Path)],
+                Headers = CreateRouteHeaders(section.GetSection(nameof(RouteMatch.Headers))),
             };
         }
 
-        private static IReadOnlyList<RouteHeader> CreateRouteHeaders(IConfigurationSection section)
+        private static IReadOnlyList<RouteHeader>? CreateRouteHeaders(IConfigurationSection section)
         {
             if (!section.Exists())
             {
@@ -227,137 +198,159 @@ namespace Microsoft.ReverseProxy.Configuration
             };
         }
 
-        private static SessionAffinityOptions CreateSessionAffinityOptions(IConfigurationSection section)
+        private static SessionAffinityConfig? CreateSessionAffinityConfig(IConfigurationSection section)
         {
             if (!section.Exists())
             {
                 return null;
             }
 
-            return new SessionAffinityOptions
+            return new SessionAffinityConfig
             {
-                Enabled = section.ReadBool(nameof(SessionAffinityOptions.Enabled)) ?? false,
-                Mode = section[nameof(SessionAffinityOptions.Mode)],
-                FailurePolicy = section[nameof(SessionAffinityOptions.FailurePolicy)],
-                Settings = section.GetSection(nameof(SessionAffinityOptions.Settings)).ReadStringDictionary()
+                Enabled = section.ReadBool(nameof(SessionAffinityConfig.Enabled)),
+                Mode = section[nameof(SessionAffinityConfig.Mode)],
+                FailurePolicy = section[nameof(SessionAffinityConfig.FailurePolicy)],
+                AffinityKeyName = section[nameof(SessionAffinityConfig.AffinityKeyName)],
+                Cookie = CreateSessionAffinityCookieConfig(section.GetSection(nameof(SessionAffinityConfig.Cookie)))
             };
         }
 
-        private static HealthCheckOptions CreateHealthCheckOptions(IConfigurationSection section)
+        private static SessionAffinityCookieConfig? CreateSessionAffinityCookieConfig(IConfigurationSection section)
         {
             if (!section.Exists())
             {
                 return null;
             }
 
-            return new HealthCheckOptions
+            return new SessionAffinityCookieConfig
             {
-                Passive = CreatePassiveHealthCheckOptions(section.GetSection(nameof(HealthCheckOptions.Passive))),
-                Active = CreateActiveHealthCheckOptions(section.GetSection(nameof(HealthCheckOptions.Active)))
+                Path = section[nameof(SessionAffinityCookieConfig.Path)],
+                SameSite = section.ReadEnum<SameSiteMode>(nameof(SessionAffinityCookieConfig.SameSite)),
+                HttpOnly = section.ReadBool(nameof(SessionAffinityCookieConfig.HttpOnly)),
+                MaxAge = section.ReadTimeSpan(nameof(SessionAffinityCookieConfig.MaxAge)),
+                Domain = section[nameof(SessionAffinityCookieConfig.Domain)],
+                IsEssential = section.ReadBool(nameof(SessionAffinityCookieConfig.IsEssential)),
+                SecurePolicy = section.ReadEnum<CookieSecurePolicy>(nameof(SessionAffinityCookieConfig.SecurePolicy)),
+                Expiration = section.ReadTimeSpan(nameof(SessionAffinityCookieConfig.Expiration))
             };
         }
 
-        private static PassiveHealthCheckOptions CreatePassiveHealthCheckOptions(IConfigurationSection section)
+        private static HealthCheckConfig? CreateHealthCheckConfig(IConfigurationSection section)
         {
             if (!section.Exists())
             {
                 return null;
             }
 
-            return new PassiveHealthCheckOptions
+            return new HealthCheckConfig
             {
-                Enabled = section.ReadBool(nameof(PassiveHealthCheckOptions.Enabled)) ?? false,
-                Policy = section[nameof(PassiveHealthCheckOptions.Policy)],
-                ReactivationPeriod = section.ReadTimeSpan(nameof(PassiveHealthCheckOptions.ReactivationPeriod))
+                Passive = CreatePassiveHealthCheckConfig(section.GetSection(nameof(HealthCheckConfig.Passive))),
+                Active = CreateActiveHealthCheckConfig(section.GetSection(nameof(HealthCheckConfig.Active)))
             };
         }
 
-        private static ActiveHealthCheckOptions CreateActiveHealthCheckOptions(IConfigurationSection section)
+        private static PassiveHealthCheckConfig? CreatePassiveHealthCheckConfig(IConfigurationSection section)
         {
             if (!section.Exists())
             {
                 return null;
             }
 
-            return new ActiveHealthCheckOptions
+            return new PassiveHealthCheckConfig
             {
-                Enabled = section.ReadBool(nameof(ActiveHealthCheckOptions.Enabled)) ?? false,
-                Interval = section.ReadTimeSpan(nameof(ActiveHealthCheckOptions.Interval)),
-                Timeout = section.ReadTimeSpan(nameof(ActiveHealthCheckOptions.Timeout)),
-                Policy = section[nameof(ActiveHealthCheckOptions.Policy)],
-                Path = section[nameof(ActiveHealthCheckOptions.Path)]
+                Enabled = section.ReadBool(nameof(PassiveHealthCheckConfig.Enabled)),
+                Policy = section[nameof(PassiveHealthCheckConfig.Policy)],
+                ReactivationPeriod = section.ReadTimeSpan(nameof(PassiveHealthCheckConfig.ReactivationPeriod))
             };
         }
 
-        private ProxyHttpClientOptions CreateProxyHttpClientOptions(IConfigurationSection section)
+        private static ActiveHealthCheckConfig? CreateActiveHealthCheckConfig(IConfigurationSection section)
         {
             if (!section.Exists())
             {
                 return null;
             }
 
-            var certSection = section.GetSection(nameof(ProxyHttpClientOptions.ClientCertificate));
-
-            X509Certificate2 clientCertificate = null;
-
-            if (certSection.Exists())
+            return new ActiveHealthCheckConfig
             {
-                clientCertificate = _certificateConfigLoader.LoadCertificate(certSection);
-            }
+                Enabled = section.ReadBool(nameof(ActiveHealthCheckConfig.Enabled)),
+                Interval = section.ReadTimeSpan(nameof(ActiveHealthCheckConfig.Interval)),
+                Timeout = section.ReadTimeSpan(nameof(ActiveHealthCheckConfig.Timeout)),
+                Policy = section[nameof(ActiveHealthCheckConfig.Policy)],
+                Path = section[nameof(ActiveHealthCheckConfig.Path)]
+            };
+        }
 
-            if (clientCertificate != null)
+        private static HttpClientConfig? CreateHttpClientConfig(IConfigurationSection section)
+        {
+            if (!section.Exists())
             {
-                Certificates.AddLast(new WeakReference<X509Certificate2>(clientCertificate));
+                return null;
             }
 
             SslProtocols? sslProtocols = null;
-            if (section.GetSection(nameof(ProxyHttpClientOptions.SslProtocols)) is IConfigurationSection sslProtocolsSection)
+            if (section.GetSection(nameof(HttpClientConfig.SslProtocols)) is IConfigurationSection sslProtocolsSection)
             {
-                foreach (var protocolConfig in sslProtocolsSection.GetChildren().Select(s => Enum.Parse<SslProtocols>(s.Value)))
+                foreach (var protocolConfig in sslProtocolsSection.GetChildren().Select(s => Enum.Parse<SslProtocols>(s.Value, ignoreCase: true)))
                 {
                     sslProtocols = sslProtocols == null ? protocolConfig : sslProtocols | protocolConfig;
                 }
             }
 
-            return new ProxyHttpClientOptions
+            WebProxyConfig? webProxy;
+            var webProxySection = section.GetSection(nameof(HttpClientConfig.WebProxy));
+            if (webProxySection.Exists())
+            {
+                webProxy = new WebProxyConfig()
+                {
+                    Address = webProxySection.ReadUri(nameof(WebProxyConfig.Address)),
+                    BypassOnLocal = webProxySection.ReadBool(nameof(WebProxyConfig.BypassOnLocal)),
+                    UseDefaultCredentials = webProxySection.ReadBool(nameof(WebProxyConfig.UseDefaultCredentials))
+                };
+            }
+            else
+            {
+                webProxy = null;
+            }
+
+            return new HttpClientConfig
             {
                 SslProtocols = sslProtocols,
-                DangerousAcceptAnyServerCertificate = section.ReadBool(nameof(ProxyHttpClientOptions.DangerousAcceptAnyServerCertificate)),
-                ClientCertificate = clientCertificate,
-                MaxConnectionsPerServer = section.ReadInt32(nameof(ProxyHttpClientOptions.MaxConnectionsPerServer)),
-                PropagateActivityContext = section.ReadBool(nameof(ProxyHttpClientOptions.PropagateActivityContext))
+                DangerousAcceptAnyServerCertificate = section.ReadBool(nameof(HttpClientConfig.DangerousAcceptAnyServerCertificate)),
+                MaxConnectionsPerServer = section.ReadInt32(nameof(HttpClientConfig.MaxConnectionsPerServer)),
+#if NET
+                EnableMultipleHttp2Connections = section.ReadBool(nameof(HttpClientConfig.EnableMultipleHttp2Connections)),
+                RequestHeaderEncoding = section[nameof(HttpClientConfig.RequestHeaderEncoding)],
+#endif
+                ActivityContextHeaders = section.ReadEnum<ActivityContextHeaders>(nameof(HttpClientConfig.ActivityContextHeaders)),
+                WebProxy = webProxy
             };
         }
 
-        private static RequestProxyOptions CreateProxyRequestOptions(IConfigurationSection section)
+        private static RequestProxyConfig? CreateProxyRequestConfig(IConfigurationSection section)
         {
             if (!section.Exists())
             {
                 return null;
             }
 
-            return new RequestProxyOptions
+            return new RequestProxyConfig
             {
-                Timeout = section.ReadTimeSpan(nameof(RequestProxyOptions.Timeout)),
-                Version = section.ReadVersion(nameof(RequestProxyOptions.Version)),
+                Timeout = section.ReadTimeSpan(nameof(RequestProxyConfig.Timeout)),
+                Version = section.ReadVersion(nameof(RequestProxyConfig.Version)),
 #if NET
-                VersionPolicy = section.ReadEnum<HttpVersionPolicy>(nameof(RequestProxyOptions.VersionPolicy)),
+                VersionPolicy = section.ReadEnum<HttpVersionPolicy>(nameof(RequestProxyConfig.VersionPolicy)),
 #endif
             };
         }
 
-        private static Destination CreateDestination(IConfigurationSection section)
+        private static DestinationConfig CreateDestination(IConfigurationSection section)
         {
-            if (!section.Exists())
+            return new DestinationConfig
             {
-                return null;
-            }
-
-            return new Destination
-            {
-                Address = section[nameof(Destination.Address)],
-                Health = section[nameof(Destination.Health)],
-                Metadata = section.GetSection(nameof(Destination.Metadata)).ReadStringDictionary(),
+                Address = section[nameof(DestinationConfig.Address)],
+                Health = section[nameof(DestinationConfig.Health)],
+                Metadata = section.GetSection(nameof(DestinationConfig.Metadata)).ReadStringDictionary(),
             };
         }
 
@@ -368,7 +361,7 @@ namespace Microsoft.ReverseProxy.Configuration
                 EventIds.ErrorSignalingChange,
                 "An exception was thrown from the change notification.");
 
-            private static readonly Action<ILogger, Exception> _loadData = LoggerMessage.Define(
+            private static readonly Action<ILogger, Exception?> _loadData = LoggerMessage.Define(
                 LogLevel.Information,
                 EventIds.LoadData,
                 "Loading proxy data from config.");

@@ -1,30 +1,36 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+using System;
 using System.Collections.Generic;
-using Microsoft.ReverseProxy.RuntimeModel;
+using Yarp.ReverseProxy.RuntimeModel;
 
-namespace Microsoft.ReverseProxy.Middleware
+namespace Yarp.ReverseProxy.Middleware
 {
     /// <summary>
-    /// Store current ClusterConfig and Tracks proxy cluster destinations that are available to handle the current request.
+    /// Stores the current proxy configuration used when processing the request.
     /// </summary>
     public class ReverseProxyFeature : IReverseProxyFeature
     {
-        /// <summary>
-        /// Cluster config for the the current request.
-        /// </summary>
-        public ClusterConfig ClusterConfig { get; set; }
+        private IReadOnlyList<DestinationState> _availableDestinations = default!;
 
-        /// <summary>
-        /// Cluster destinations that can handle the current request.
-        /// </summary>
-        public IReadOnlyList<DestinationInfo> AvailableDestinations { get; set; }
+        /// <inheritdoc/>
+        public RouteModel Route { get; init; } = default!;
 
-        /// <summary>
-        /// Actual destination chosen as the target that received the current request.
-        /// </summary>
-        public DestinationInfo SelectedDestination { get; set; }
+        /// <inheritdoc/>
+        public ClusterModel Cluster { get; set; } = default!;
 
+        /// <inheritdoc/>
+        public IReadOnlyList<DestinationState> AllDestinations { get; init; } = default!;
+
+        /// <inheritdoc/>
+        public IReadOnlyList<DestinationState> AvailableDestinations
+        {
+            get => _availableDestinations;
+            set => _availableDestinations = value ?? throw new ArgumentNullException(nameof(value));
+        }
+
+        /// <inheritdoc/>
+        public DestinationState? ProxiedDestination { get; set; }
     }
 }

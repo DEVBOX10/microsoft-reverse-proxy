@@ -9,17 +9,17 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
-using Microsoft.ReverseProxy.Abstractions;
-using Microsoft.ReverseProxy.Service;
-using Microsoft.ReverseProxy.Utilities;
+using Yarp.ReverseProxy.Abstractions;
+using Yarp.ReverseProxy.Service;
+using Yarp.ReverseProxy.Utilities;
 
-namespace Microsoft.ReverseProxy.ServiceFabric
+namespace Yarp.ReverseProxy.ServiceFabric
 {
     /// <summary>
     /// Periodically calls Service Fabric API's to discover services and their configurations.
     /// Use <see cref="ServiceFabricDiscoveryOptions"/> to configure Service Fabric service discovery.
     /// </summary>
-    internal class ServiceFabricConfigProvider : IProxyConfigProvider, IAsyncDisposable
+    internal sealed class ServiceFabricConfigProvider : IProxyConfigProvider, IAsyncDisposable
     {
         private readonly object _lockObject = new object();
         private readonly TaskCompletionSource<int> _initalConfigLoadTcs = new TaskCompletionSource<int>();
@@ -70,7 +70,7 @@ namespace Microsoft.ReverseProxy.ServiceFabric
                         if (_snapshot == null)
                         {
                             Log.StartWithoutInitialServiceFabricDiscovery(_logger);
-                            UpdateSnapshot(new List<ProxyRoute>(), new List<Cluster>());
+                            UpdateSnapshot(new List<RouteConfig>(), new List<ClusterConfig>());
                         }
                     }
                 }
@@ -132,7 +132,7 @@ namespace Microsoft.ReverseProxy.ServiceFabric
             }
         }
 
-        private void UpdateSnapshot(IReadOnlyList<ProxyRoute> routes, IReadOnlyList<Cluster> clusters)
+        private void UpdateSnapshot(IReadOnlyList<RouteConfig> routes, IReadOnlyList<ClusterConfig> clusters)
         {
             // Prevent overlapping updates
             lock (_lockObject)
@@ -162,9 +162,9 @@ namespace Microsoft.ReverseProxy.ServiceFabric
         // TODO: Perhaps YARP should provide this type?
         private sealed class ConfigurationSnapshot : IProxyConfig
         {
-            public IReadOnlyList<ProxyRoute> Routes { get; internal set; }
+            public IReadOnlyList<RouteConfig> Routes { get; internal set; }
 
-            public IReadOnlyList<Cluster> Clusters { get; internal set; }
+            public IReadOnlyList<ClusterConfig> Clusters { get; internal set; }
 
             public IChangeToken ChangeToken { get; internal set; }
         }

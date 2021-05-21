@@ -1,19 +1,17 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+using System.Net.Http;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Routing.Patterns;
-using Microsoft.ReverseProxy.Abstractions;
-using Microsoft.ReverseProxy.RuntimeModel;
-using Microsoft.ReverseProxy.Service.Management;
-using Microsoft.ReverseProxy.Service.Proxy;
-using Microsoft.ReverseProxy.Service.RuntimeModel.Transforms;
 using Xunit;
+using Yarp.ReverseProxy.Abstractions;
+using Yarp.ReverseProxy.RuntimeModel;
+using Yarp.ReverseProxy.Service.Management;
+using Yarp.ReverseProxy.Service.Proxy;
 
-namespace Microsoft.ReverseProxy.DynamicEndpoint
+namespace Yarp.ReverseProxy.DynamicEndpoint
 {
     public class ReverseProxyConventionBuilderTests
     {
@@ -30,9 +28,9 @@ namespace Microsoft.ReverseProxy.DynamicEndpoint
                 configured = true;
             });
 
-            var proxyRoute = new ProxyRoute();
-            var cluster = new Cluster();
-            var endpointBuilder = CreateEndpointBuilder(proxyRoute, cluster);
+            var routeConfig = new RouteConfig();
+            var cluster = new ClusterConfig();
+            var endpointBuilder = CreateEndpointBuilder(routeConfig, cluster);
 
             var action = Assert.Single(conventions);
             action(endpointBuilder);
@@ -53,9 +51,9 @@ namespace Microsoft.ReverseProxy.DynamicEndpoint
                 configured = true;
             });
 
-            var proxyRoute = new ProxyRoute();
-            var cluster = new Cluster();
-            var endpointBuilder = CreateEndpointBuilder(proxyRoute, cluster);
+            var routeConfig = new RouteConfig();
+            var cluster = new ClusterConfig();
+            var endpointBuilder = CreateEndpointBuilder(routeConfig, cluster);
 
             var action = Assert.Single(conventions);
             action(endpointBuilder);
@@ -76,9 +74,9 @@ namespace Microsoft.ReverseProxy.DynamicEndpoint
                 configured = true;
             });
 
-            var proxyRoute = new ProxyRoute();
-            var cluster = new Cluster();
-            var endpointBuilder = CreateEndpointBuilder(proxyRoute, cluster);
+            var routeConfig = new RouteConfig();
+            var cluster = new ClusterConfig();
+            var endpointBuilder = CreateEndpointBuilder(routeConfig, cluster);
 
             var action = Assert.Single(conventions);
             action(endpointBuilder);
@@ -86,19 +84,18 @@ namespace Microsoft.ReverseProxy.DynamicEndpoint
             Assert.True(configured);
         }
 
-        private static RouteEndpointBuilder CreateEndpointBuilder(ProxyRoute proxyRoute, Cluster cluster)
+        private static RouteEndpointBuilder CreateEndpointBuilder(RouteConfig routeConfig, ClusterConfig cluster)
         {
             var endpointBuilder = new RouteEndpointBuilder(context => Task.CompletedTask, RoutePatternFactory.Parse(""), 0);
-            var routeConfig = new RouteConfig(
-                new RouteInfo("route-1"),
-                proxyRoute,
-                new ClusterInfo("cluster-1", new DestinationManager())
+            var routeModel = new RouteModel(
+                routeConfig,
+                new ClusterState("cluster-1")
                 {
-                    Config = new ClusterConfig(cluster, default)
+                    Model = new ClusterModel(cluster, new HttpMessageInvoker(new HttpClientHandler()))
                 },
                 HttpTransformer.Default);
 
-            endpointBuilder.Metadata.Add(routeConfig);
+            endpointBuilder.Metadata.Add(routeModel);
 
             return endpointBuilder;
         }

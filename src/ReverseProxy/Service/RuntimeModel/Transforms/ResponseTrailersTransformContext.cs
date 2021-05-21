@@ -4,7 +4,7 @@
 using System.Net.Http;
 using Microsoft.AspNetCore.Http;
 
-namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
+namespace Yarp.ReverseProxy.Service.RuntimeModel.Transforms
 {
     /// <summary>
     /// Transform state for use with <see cref="ResponseTrailersTransform"/>
@@ -14,12 +14,12 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
         /// <summary>
         /// The current request context.
         /// </summary>
-        public HttpContext HttpContext { get; init; }
+        public HttpContext HttpContext { get; init; } = default!;
 
         /// <summary>
         /// The incoming proxy response.
         /// </summary>
-        public HttpResponseMessage ProxyResponse { get; init; }
+        public HttpResponseMessage ProxyResponse { get; init; } = default!;
 
         /// <summary>
         /// Gets or sets if the response trailers have been copied from the HttpResponseMessage

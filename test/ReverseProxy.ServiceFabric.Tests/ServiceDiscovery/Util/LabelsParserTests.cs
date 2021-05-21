@@ -1,16 +1,18 @@
-// <copyright file="LabelsParserTests.cs" company="Microsoft Corporation">
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// </copyright>
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
 
 using System;
 using System.Collections.Generic;
+using System.Security.Authentication;
+using System.Text;
 using FluentAssertions;
-using Microsoft.ReverseProxy.Abstractions;
-using Microsoft.ReverseProxy.Abstractions.ClusterDiscovery.Contract;
-using Microsoft.ReverseProxy.Service.Proxy;
 using Xunit;
+using Yarp.ReverseProxy.Abstractions;
+using Yarp.ReverseProxy.Service.LoadBalancing;
+using Yarp.ReverseProxy.Service.Proxy;
+using Yarp.ReverseProxy.Service.SessionAffinity;
 
-namespace Microsoft.ReverseProxy.ServiceFabric.Tests
+namespace Yarp.ReverseProxy.ServiceFabric.Tests
 {
     public class LabelsParserTests
     {
@@ -27,8 +29,15 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
                 { "YARP.Backend.SessionAffinity.Enabled", "true" },
                 { "YARP.Backend.SessionAffinity.Mode", "Cookie" },
                 { "YARP.Backend.SessionAffinity.FailurePolicy", "Return503Error" },
-                { "YARP.Backend.SessionAffinity.Settings.ParameterA", "ValueA" },
-                { "YARP.Backend.SessionAffinity.Settings.ParameterB", "ValueB" },
+                { "YARP.Backend.SessionAffinity.AffinityKeyName", "Key1" },
+                { "YARP.Backend.SessionAffinity.Cookie.Domain", "localhost" },
+                { "YARP.Backend.SessionAffinity.Cookie.Expiration", "03:00:00" },
+                { "YARP.Backend.SessionAffinity.Cookie.HttpOnly", "true" },
+                { "YARP.Backend.SessionAffinity.Cookie.IsEssential", "true" },
+                { "YARP.Backend.SessionAffinity.Cookie.MaxAge", "1.00:00:00" },
+                { "YARP.Backend.SessionAffinity.Cookie.Path", "mypath" },
+                { "YARP.Backend.SessionAffinity.Cookie.SameSite", "Strict" },
+                { "YARP.Backend.SessionAffinity.Cookie.SecurePolicy", "SameAsRequest" },
                 { "YARP.Backend.HttpRequest.Timeout", "00:00:17" },
                 { "YARP.Backend.HttpRequest.Version", "1.1" },
 #if NET
@@ -43,26 +52,45 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
                 { "YARP.Backend.HealthCheck.Passive.Policy", "MyPassiveHealthPolicy" },
                 { "YARP.Backend.HealthCheck.Passive.ReactivationPeriod", "00:00:07" },
                 { "YARP.Backend.Metadata.Foo", "Bar" },
+
+                { "YARP.Backend.HttpClient.DangerousAcceptAnyServerCertificate", "true" },
+                { "YARP.Backend.HttpClient.MaxConnectionsPerServer", "1000" },
+                { "YARP.Backend.HttpClient.SslProtocols", "Tls12" },
+                { "YARP.Backend.HttpClient.ActivityContextHeaders", "BaggageAndCorrelationContext" },
+#if NET
+                { "YARP.Backend.HttpClient.EnableMultipleHttp2Connections", "false" },
+                { "YARP.Backend.HttpClient.RequestHeaderEncoding", "utf-8" },
+#endif
+                { "YARP.Backend.HttpClient.WebProxy.Address", "https://10.20.30.40" },
+                { "YARP.Backend.HttpClient.WebProxy.BypassOnLocal", "true" },
+                { "YARP.Backend.HttpClient.WebProxy.UseDefaultCredentials", "false" },
             };
 
             var cluster = LabelsParser.BuildCluster(_testServiceName, labels, null);
 
-            var expectedCluster = new Cluster
+            var expectedCluster = new ClusterConfig
             {
-                Id = "MyCoolClusterId",
+                ClusterId = "MyCoolClusterId",
                 LoadBalancingPolicy = LoadBalancingPolicies.LeastRequests,
-                SessionAffinity = new SessionAffinityOptions
+                SessionAffinity = new SessionAffinityConfig
                 {
                     Enabled = true,
                     Mode = SessionAffinityConstants.Modes.Cookie,
                     FailurePolicy = SessionAffinityConstants.AffinityFailurePolicies.Return503Error,
-                    Settings = new Dictionary<string, string>
+                    AffinityKeyName = "Key1",
+                    Cookie = new SessionAffinityCookieConfig
                     {
-                        { "ParameterA", "ValueA" },
-                        { "ParameterB", "ValueB" }
+                        Domain = "localhost",
+                        Expiration = TimeSpan.FromHours(3),
+                        HttpOnly = true,
+                        IsEssential = true,
+                        MaxAge = TimeSpan.FromDays(1),
+                        Path = "mypath",
+                        SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Strict,
+                        SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.SameAsRequest
                     }
                 },
-                HttpRequest = new RequestProxyOptions
+                HttpRequest = new RequestProxyConfig
                 {
                     Timeout = TimeSpan.FromSeconds(17),
                     Version = new Version(1, 1),
@@ -70,9 +98,9 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
                     VersionPolicy = System.Net.Http.HttpVersionPolicy.RequestVersionExact
 #endif
                 },
-                HealthCheck = new HealthCheckOptions
+                HealthCheck = new HealthCheckConfig
                 {
-                    Active = new ActiveHealthCheckOptions
+                    Active = new ActiveHealthCheckConfig
                     {
                         Enabled = true,
                         Interval = TimeSpan.FromSeconds(5),
@@ -80,7 +108,7 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
                         Path = "/api/health",
                         Policy = "MyActiveHealthPolicy"
                     },
-                    Passive = new PassiveHealthCheckOptions
+                    Passive = new PassiveHealthCheckConfig
                     {
                         Enabled = true,
                         Policy = "MyPassiveHealthPolicy",
@@ -91,6 +119,23 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
                 {
                     { "Foo", "Bar" },
                 },
+                HttpClient = new HttpClientConfig
+                {
+                    ActivityContextHeaders = ActivityContextHeaders.BaggageAndCorrelationContext,
+                    DangerousAcceptAnyServerCertificate = true,
+#if NET
+                    EnableMultipleHttp2Connections = false,
+                    RequestHeaderEncoding = "utf-8",
+#endif
+                    MaxConnectionsPerServer = 1000,
+                    SslProtocols = SslProtocols.Tls12,
+                    WebProxy = new WebProxyConfig
+                    {
+                        Address = new Uri("https://10.20.30.40"),
+                        BypassOnLocal = true,
+                        UseDefaultCredentials = false,
+                    }
+                }
             };
             cluster.Should().BeEquivalentTo(expectedCluster);
         }
@@ -105,26 +150,26 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
 
             var cluster = LabelsParser.BuildCluster(_testServiceName, labels, null);
 
-            var expectedCluster = new Cluster
+            var expectedCluster = new ClusterConfig
             {
-                Id = "MyCoolClusterId",
-                SessionAffinity = new SessionAffinityOptions
+                ClusterId = "MyCoolClusterId",
+                SessionAffinity = new SessionAffinityConfig
                 {
-                    Enabled = false,
+                    Cookie = new SessionAffinityCookieConfig()
                 },
-                HttpRequest = new RequestProxyOptions(),
-                HealthCheck = new HealthCheckOptions
+                HttpRequest = new RequestProxyConfig(),
+                HealthCheck = new HealthCheckConfig
                 {
-                    Active = new ActiveHealthCheckOptions
-                    {
-                        Enabled = false,
-                    },
-                    Passive = new PassiveHealthCheckOptions
-                    {
-                        Enabled = false,
-                    }
+                    Active = new ActiveHealthCheckConfig(),
+                    Passive = new PassiveHealthCheckConfig()
                 },
                 Metadata = new Dictionary<string, string>(),
+                HttpClient = new HttpClientConfig
+                {
+                    WebProxy = new WebProxyConfig
+                    {
+                    }
+                }
             };
             cluster.Should().BeEquivalentTo(expectedCluster);
         }
@@ -136,7 +181,9 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
         [InlineData("false", false)]
         [InlineData("False", false)]
         [InlineData("FALSE", false)]
-        public void BuildCluster_HealthCheckOptions_Enabled_Valid(string label, bool expected)
+        [InlineData(null, null)]
+        [InlineData("", null)]
+        public void BuildCluster_HealthCheckOptions_Enabled_Valid(string label, bool? expected)
         {
             var labels = new Dictionary<string, string>()
             {
@@ -150,8 +197,8 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
         }
 
         [Theory]
-        [InlineData(null)]
-        [InlineData("")]
+        [InlineData("notbool")]
+        [InlineData(" ")]
         public void BuildCluster_HealthCheckOptions_Enabled_Invalid(string label)
         {
             var labels = new Dictionary<string, string>()
@@ -179,7 +226,7 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
 
             var cluster = LabelsParser.BuildCluster(_testServiceName, labels, null);
 
-            cluster.Id.Should().Be(_testServiceName.ToString());
+            cluster.ClusterId.Should().Be(_testServiceName.ToString());
         }
 
         [Theory]
@@ -208,7 +255,7 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
                 { key, invalidValue },
             };
 
-            Func<Cluster> func = () => LabelsParser.BuildCluster(_testServiceName, labels, null);
+            Func<ClusterConfig> func = () => LabelsParser.BuildCluster(_testServiceName, labels, null);
 
             func.Should().Throw<ConfigException>().WithMessage($"Could not convert label {key}='{invalidValue}' *");
         }
@@ -225,7 +272,7 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
                 { "YARP.Routes.MyRoute.MatchHeaders.[0].Name", "x-company-key" },
                 { "YARP.Routes.MyRoute.MatchHeaders.[0].Values", "contoso" },
                 { "YARP.Routes.MyRoute.MatchHeaders.[0].IsCaseSensitive", "true" },
-                { "YARP.Routes.MyRoute.MatchHeaders.[1].Mode", "ExactHeader" }, 
+                { "YARP.Routes.MyRoute.MatchHeaders.[1].Mode", "ExactHeader" },
                 { "YARP.Routes.MyRoute.MatchHeaders.[1].Name", "x-environment" },
                 { "YARP.Routes.MyRoute.MatchHeaders.[1].Values", "dev, uat" },
                 { "YARP.Routes.MyRoute.Metadata.Foo", "Bar" },
@@ -239,12 +286,12 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
 
             var routes = LabelsParser.BuildRoutes(_testServiceName, labels);
 
-            var expectedRoutes = new List<ProxyRoute>
+            var expectedRoutes = new List<RouteConfig>
             {
-                new ProxyRoute
+                new RouteConfig
                 {
                     RouteId = "MyCoolClusterId:MyRoute",
-                    Match = new ProxyMatch
+                    Match = new RouteMatch
                     {
                         Hosts = new[] { "example.com" },
                         Headers = new List<RouteHeader>
@@ -302,12 +349,12 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
 
             var routes = LabelsParser.BuildRoutes(_testServiceName, labels);
 
-            var expectedRoutes = new List<ProxyRoute>
+            var expectedRoutes = new List<RouteConfig>
             {
-                new ProxyRoute
+                new RouteConfig
                 {
                     RouteId = "MyCoolClusterId:MyRoute",
-                    Match = new ProxyMatch
+                    Match = new RouteMatch
                     {
                         Hosts = new[] { "example.com" },
                     },
@@ -332,12 +379,12 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
 
             var routes = LabelsParser.BuildRoutes(_testServiceName, labels);
 
-            var expectedRoutes = new List<ProxyRoute>
+            var expectedRoutes = new List<RouteConfig>
             {
-                new ProxyRoute
+                new RouteConfig
                 {
                     RouteId = "MyCoolClusterId:MyRoute",
-                    Match = new ProxyMatch
+                    Match = new RouteMatch
                     {
                         Hosts = new[] { "'this invalid thing" },
                     },
@@ -366,12 +413,12 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
 
             var routes = LabelsParser.BuildRoutes(_testServiceName, labels);
 
-            var expectedRoutes = new List<ProxyRoute>
+            var expectedRoutes = new List<RouteConfig>
             {
-                new ProxyRoute
+                new RouteConfig
                 {
                     RouteId = $"{Uri.EscapeDataString(_testServiceName.ToString())}:MyRoute",
-                    Match = new ProxyMatch
+                    Match = new RouteMatch
                     {
                         Hosts = new[] { "example.com" },
                     },
@@ -393,12 +440,12 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
 
             var routes = LabelsParser.BuildRoutes(_testServiceName, labels);
 
-            var expectedRoutes = new List<ProxyRoute>
+            var expectedRoutes = new List<RouteConfig>
             {
-                new ProxyRoute
+                new RouteConfig
                 {
                     RouteId = $"{Uri.EscapeDataString(_testServiceName.ToString())}:MyRoute",
-                    Match = new ProxyMatch
+                    Match = new RouteMatch
                     {
                         Path = "/{**catchall}",
                     },
@@ -419,7 +466,7 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
                 { "YARP.Routes.MyRoute.Order", "this is no number" },
             };
 
-            Func<List<ProxyRoute>> func = () => LabelsParser.BuildRoutes(_testServiceName, labels);
+            Func<List<RouteConfig>> func = () => LabelsParser.BuildRoutes(_testServiceName, labels);
 
             func.Should()
                 .Throw<ConfigException>()
@@ -443,12 +490,12 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
 
             var routes = LabelsParser.BuildRoutes(_testServiceName, labels);
 
-            var expectedRoutes = new List<ProxyRoute>
+            var expectedRoutes = new List<RouteConfig>
             {
-                new ProxyRoute
+                new RouteConfig
                 {
                     RouteId = $"MyCoolClusterId:{routeName}",
-                    Match = new ProxyMatch
+                    Match = new RouteMatch
                     {
                         Hosts = new[] { "example.com" },
                     },
@@ -481,7 +528,7 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
             };
             labels[invalidKey] = value;
 
-            Func<List<ProxyRoute>> func = () => LabelsParser.BuildRoutes(_testServiceName, labels);
+            Func<List<RouteConfig>> func = () => LabelsParser.BuildRoutes(_testServiceName, labels);
 
             func.Should()
                 .Throw<ConfigException>()
@@ -503,7 +550,7 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
             };
             labels[invalidKey] = value;
 
-            Func<List<ProxyRoute>> func = () => LabelsParser.BuildRoutes(_testServiceName, labels);
+            Func<List<RouteConfig>> func = () => LabelsParser.BuildRoutes(_testServiceName, labels);
 
             func.Should()
                 .Throw<ConfigException>()
@@ -527,7 +574,7 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
             labels[invalidKey] = value;
 
             // Act
-            Func<List<ProxyRoute>> func = () => LabelsParser.BuildRoutes(_testServiceName, labels);
+            Func<List<RouteConfig>> func = () => LabelsParser.BuildRoutes(_testServiceName, labels);
 
             // Assert
             func.Should()
@@ -550,7 +597,7 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
             labels[invalidKey] = value;
 
             // Act
-            Func<List<ProxyRoute>> func = () => LabelsParser.BuildRoutes(_testServiceName, labels);
+            Func<List<RouteConfig>> func = () => LabelsParser.BuildRoutes(_testServiceName, labels);
 
             // Assert
             func.Should()
@@ -559,8 +606,8 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
         }
 
         [Theory]
-        [InlineData("YARP.Routes.MyRoute0.MatchHeaders.[0].Values", "apples, oranges, grapes", new string[] {"apples", "oranges", "grapes"})]
-        [InlineData("YARP.Routes.MyRoute0.MatchHeaders.[0].Values", "apples,,oranges,grapes", new string[] {"apples", "", "oranges", "grapes"})]
+        [InlineData("YARP.Routes.MyRoute0.MatchHeaders.[0].Values", "apples, oranges, grapes", new string[] { "apples", "oranges", "grapes" })]
+        [InlineData("YARP.Routes.MyRoute0.MatchHeaders.[0].Values", "apples,,oranges,grapes", new string[] { "apples", "", "oranges", "grapes" })]
         public void BuildRoutes_MatchHeadersWithCSVs_Works(string invalidKey, string value, string[] expected)
         {
             var labels = new Dictionary<string, string>()
@@ -575,12 +622,12 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
 
             var routes = LabelsParser.BuildRoutes(_testServiceName, labels);
 
-            var expectedRoutes = new List<ProxyRoute>
+            var expectedRoutes = new List<RouteConfig>
             {
-                new ProxyRoute
+                new RouteConfig
                 {
                     RouteId = $"MyCoolClusterId:MyRoute0",
-                    Match = new ProxyMatch
+                    Match = new RouteMatch
                     {
                         Hosts = new[] { "example0.com" },
                         Headers = new List<RouteHeader>() {
@@ -625,12 +672,12 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
 
             var routes = LabelsParser.BuildRoutes(_testServiceName, labels);
 
-            var expectedRoutes = new List<ProxyRoute>
+            var expectedRoutes = new List<RouteConfig>
             {
-                new ProxyRoute
+                new RouteConfig
                 {
                     RouteId = "MyCoolClusterId:MyRoute",
-                    Match = new ProxyMatch
+                    Match = new RouteMatch
                     {
                         Hosts = new[] { "example.com" },
                     },
@@ -663,12 +710,12 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
 
             var routes = LabelsParser.BuildRoutes(_testServiceName, labels);
 
-            var expectedRoutes = new List<ProxyRoute>
+            var expectedRoutes = new List<RouteConfig>
             {
-                new ProxyRoute
+                new RouteConfig
                 {
                     RouteId = "MyCoolClusterId:MyRoute",
-                    Match = new ProxyMatch
+                    Match = new RouteMatch
                     {
                         Hosts = new[] { "example.com" },
                         Path = "v2/{**rest}",
@@ -677,10 +724,10 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
                     ClusterId = "MyCoolClusterId",
                     Metadata = new Dictionary<string, string> { { "Foo", "Bar" } },
                 },
-                new ProxyRoute
+                new RouteConfig
                 {
                     RouteId = "MyCoolClusterId:CoolRoute",
-                    Match = new ProxyMatch
+                    Match = new RouteMatch
                     {
                         Hosts = new[] { "example.net" },
                     },
@@ -688,10 +735,10 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
                     ClusterId = "MyCoolClusterId",
                     Metadata = new Dictionary<string, string>(),
                 },
-                new ProxyRoute
+                new RouteConfig
                 {
                     RouteId = "MyCoolClusterId:EvenCoolerRoute",
-                    Match = new ProxyMatch
+                    Match = new RouteMatch
                     {
                         Hosts = new[] { "example.org" },
                     },

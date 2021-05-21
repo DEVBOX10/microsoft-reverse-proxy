@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Xunit;
 
-namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
+namespace Yarp.ReverseProxy.Service.RuntimeModel.Transforms
 {
     public class QueryParameterFromStaticTransformTests
     {
@@ -65,6 +65,79 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel.Transforms
             var transform = new QueryParameterFromStaticTransform(QueryStringTransformMode.Set, "z", "foo");
             await transform.ApplyAsync(context);
             Assert.Equal("?z=foo", context.Query.QueryString.Value);
+        }
+
+        [Fact]
+        public async Task Set_AddsNewEmptyQueryStringParameter()
+        {
+            var httpContext = new DefaultHttpContext();
+            var context = new RequestTransformContext()
+            {
+                Query = new QueryTransformContext(httpContext.Request),
+                HttpContext = httpContext
+            };
+            var transform = new QueryParameterFromStaticTransform(QueryStringTransformMode.Set, "z", "");
+            await transform.ApplyAsync(context);
+            Assert.Equal("?z=", context.Query.QueryString.Value);
+        }
+
+        [Fact]
+        public async Task Set_OverwritesExistingParamWithEmptyValue()
+        {
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.QueryString = new QueryString("?z=foo");
+            var context = new RequestTransformContext()
+            {
+                Query = new QueryTransformContext(httpContext.Request),
+                HttpContext = httpContext
+            };
+            var transform = new QueryParameterFromStaticTransform(QueryStringTransformMode.Set, "z", "");
+            await transform.ApplyAsync(context);
+            Assert.Equal("?z=", context.Query.QueryString.Value);
+        }
+
+        [Fact]
+        public async Task Set_AddNewEmptyParamToExistingQueryStringParameter()
+        {
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.QueryString = new QueryString("?x=1");
+            var context = new RequestTransformContext()
+            {
+                Query = new QueryTransformContext(httpContext.Request),
+                HttpContext = httpContext
+            };
+            var transform = new QueryParameterFromStaticTransform(QueryStringTransformMode.Set, "z", "");
+            await transform.ApplyAsync(context);
+            Assert.Equal("?x=1&z=", context.Query.QueryString.Value);
+        }
+
+        [Fact]
+        public async Task Append_AddsNewEmptyQueryStringParameter()
+        {
+            var httpContext = new DefaultHttpContext();
+            var context = new RequestTransformContext()
+            {
+                Query = new QueryTransformContext(httpContext.Request),
+                HttpContext = httpContext
+            };
+            var transform = new QueryParameterFromStaticTransform(QueryStringTransformMode.Append, "z", "");
+            await transform.ApplyAsync(context);
+            Assert.Equal("?z=", context.Query.QueryString.Value);
+        }
+
+        [Fact]
+        public async Task Append_AppendsEmptyValueToExistingParam()
+        {
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.QueryString = new QueryString("?z=foo");
+            var context = new RequestTransformContext()
+            {
+                Query = new QueryTransformContext(httpContext.Request),
+                HttpContext = httpContext
+            };
+            var transform = new QueryParameterFromStaticTransform(QueryStringTransformMode.Append, "z", "");
+            await transform.ApplyAsync(context);
+            Assert.Equal("?z=foo&z=", context.Query.QueryString.Value);
         }
     }
 }

@@ -3,9 +3,9 @@
 
 using System.Collections.Generic;
 using Microsoft.Extensions.Primitives;
-using Microsoft.ReverseProxy.Abstractions;
+using Yarp.ReverseProxy.Abstractions;
 
-namespace Microsoft.ReverseProxy.Service
+namespace Yarp.ReverseProxy.Service
 {
     /// <summary>
     /// Represents a snapshot of proxy configuration data.
@@ -13,14 +13,14 @@ namespace Microsoft.ReverseProxy.Service
     public interface IProxyConfig
     {
         /// <summary>
-        /// Route information for matching requests to clusters.
+        /// Routes matching requests to clusters.
         /// </summary>
-        IReadOnlyList<ProxyRoute> Routes { get; }
+        IReadOnlyList<RouteConfig> Routes { get; }
 
         /// <summary>
         /// Cluster information for where to proxy requests to.
         /// </summary>
-        IReadOnlyList<Cluster> Clusters { get; }
+        IReadOnlyList<ClusterConfig> Clusters { get; }
 
         /// <summary>
         /// A notification that triggers when this snapshot expires.

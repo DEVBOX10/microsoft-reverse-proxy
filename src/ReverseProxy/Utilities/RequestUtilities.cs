@@ -3,63 +3,81 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Net.Http;
-using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Primitives;
 using Microsoft.Net.Http.Headers;
 
-namespace Microsoft.ReverseProxy.Utilities
+namespace Yarp.ReverseProxy.Utilities
 {
-    internal static class RequestUtilities
+    /// <summary>
+    /// APIs that can be used when transforming requests.
+    /// </summary>
+    public static class RequestUtilities
     {
-        internal static bool ShouldSkipResponseHeader(string headerName, bool isHttp2OrGreater)
+        internal static bool ShouldSkipRequestHeader(string headerName)
         {
-            if (isHttp2OrGreater)
+            if (_headersToExclude.Contains(headerName))
             {
-                return _invalidH2H3ResponseHeaders.Contains(headerName);
+                return true;
             }
-            else
+
+            // Filter out HTTP/2 pseudo headers like ":method" and ":path", those go into other fields.
+            if (headerName.StartsWith(':'))
             {
-                return headerName.Equals(HeaderNames.TransferEncoding, StringComparison.OrdinalIgnoreCase);
+                return true;
             }
+
+            return false;
         }
 
-        private static readonly HashSet<string> _invalidH2H3ResponseHeaders = new(StringComparer.OrdinalIgnoreCase)
+        internal static bool ShouldSkipResponseHeader(string headerName)
+        {
+            return _headersToExclude.Contains(headerName);
+        }
+
+        private static readonly HashSet<string> _headersToExclude = new(StringComparer.OrdinalIgnoreCase)
         {
             HeaderNames.Connection,
             HeaderNames.TransferEncoding,
             HeaderNames.KeepAlive,
             HeaderNames.Upgrade,
-            "Proxy-Connection"
+            "Proxy-Connection",
+            "Proxy-Authenticate",
+            "Proxy-Authentication-Info",
+            "Proxy-Authorization",
+            "Proxy-Features",
+            "Proxy-Instruction",
+            "Security-Scheme",
+            "ALPN",
+            "Close",
+#if NET
+            HeaderNames.AltSvc,
+#else
+            "Alt-Svc",
+#endif
+
         };
 
         /// <summary>
         /// Appends the given path and query to the destination prefix while avoiding duplicate '/'.
         /// </summary>
-        /// <param name="destinationPrefix">The scheme, host, port, and possibly path base for the destination server.</param>
+        /// <param name="destinationPrefix">The scheme, host, port, and optional path base for the destination server.
+        /// e.g. "http://example.com:80/path/prefix"</param>
         /// <param name="path">The path to append.</param>
         /// <param name="query">The query to append</param>
-        internal static Uri MakeDestinationAddress(string destinationPrefix, PathString path, QueryString query)
+        public static Uri MakeDestinationAddress(string destinationPrefix, PathString path, QueryString query)
         {
-            var builder = new StringBuilder(destinationPrefix);
-            if (path.HasValue)
+            ReadOnlySpan<char> prefixSpan = destinationPrefix;
+
+            if (path.HasValue && destinationPrefix.EndsWith('/'))
             {
                 // When PathString has a value it always starts with a '/'. Avoid double slashes when concatenating.
-                if (builder.Length > 0 && builder[^1] == '/')
-                {
-                    builder.Length--;
-                }
-
-                builder.Append(path.ToUriComponent());
-            }
-            if (query.HasValue)
-            {
-                builder.Append(query.ToUriComponent());
+                prefixSpan = prefixSpan[0..^1];
             }
 
-            var targetAddress = builder.ToString();
+            var targetAddress = string.Concat(prefixSpan, path.ToUriComponent(), query.ToUriComponent());
+
             return new Uri(targetAddress, UriKind.Absolute);
         }
 

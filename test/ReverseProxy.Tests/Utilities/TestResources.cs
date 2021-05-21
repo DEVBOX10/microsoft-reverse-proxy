@@ -1,20 +1,22 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Net;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using Xunit;
 
-namespace Microsoft.ReverseProxy.Utilities.Tests
+namespace Yarp.ReverseProxy.Utilities.Tests
 {
     public static class TestResources
     {
         private const int MutexTimeout = 120 * 1000;
         private static readonly Mutex importPfxMutex = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ?
-            new Mutex(initiallyOwned: false, "Global\\Microsoft.ReverseProxy.Tests.Certificates.LoadPfxCertificate") :
+            new Mutex(initiallyOwned: false, "Global\\Yarp.ReverseProxy.Tests.Certificates.LoadPfxCertificate") :
             null;
 
         public static X509Certificate2 GetTestCertificate(string certName = "testCert.pfx")
@@ -36,6 +38,23 @@ namespace Microsoft.ReverseProxy.Utilities.Tests
             }
         }
 
+        public static IWebProxy GetTestWebProxy(string address = "http://localhost:8080", bool? bypassOnLocal = null, bool? useDefaultCredentials = null)
+        {
+            var webProxy = new WebProxy(new System.Uri(address));
+
+            if (bypassOnLocal != null)
+            {
+                webProxy.BypassProxyOnLocal = bypassOnLocal.Value;
+            }
+
+            if (useDefaultCredentials != null)
+            {
+                webProxy.UseDefaultCredentials = useDefaultCredentials.Value;
+            }
+
+            return webProxy;
+        }
+
         public static string GetCertPath(string fileName)
         {
             if (fileName == null)
@@ -46,5 +65,8 @@ namespace Microsoft.ReverseProxy.Utilities.Tests
             var basePath = Path.Combine(Directory.GetCurrentDirectory(), "TestCertificates");
             return Path.Combine(basePath, fileName);
         }
+
+        public static IEnumerable<(string Name, string[] Values)> ParseNameAndValues(string names, string values) =>
+            names.Split("; ").Zip(values.Split(", ")).GroupBy(p => p.First, (k, g) => (Name: k, Values: g.Select(i => i.Second).ToArray()));
     }
 }

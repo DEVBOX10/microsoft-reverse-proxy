@@ -3,19 +3,18 @@
 
 using System;
 using System.Collections.Generic;
-using Microsoft.ReverseProxy.RuntimeModel;
 using Xunit;
+using Yarp.ReverseProxy.RuntimeModel;
 
-
-namespace Microsoft.ReverseProxy.Service.RuntimeModel
+namespace Yarp.ReverseProxy.Service.RuntimeModel
 {
     public class DestinationInfoTests
     {
         [Fact]
         public void DestinationInfoEnumerator()
         {
-            var destinationInfo = new DestinationInfo("destionation1");
-            var list = new List<DestinationInfo>();
+            var destinationInfo = new DestinationState("destionation1");
+            var list = new List<DestinationState>();
 
             foreach (var item in destinationInfo)
             {
@@ -29,9 +28,9 @@ namespace Microsoft.ReverseProxy.Service.RuntimeModel
         [Fact]
         public void DestionationInfoReadOnlyList()
         {
-            var destinationInfo = new DestinationInfo("destionation2");
+            var destinationInfo = new DestinationState("destionation2");
 
-            IReadOnlyList<DestinationInfo> list = destinationInfo;
+            IReadOnlyList<DestinationState> list = destinationInfo;
 
             Assert.Equal(1, list.Count);
             Assert.Same(destinationInfo, list[0]);

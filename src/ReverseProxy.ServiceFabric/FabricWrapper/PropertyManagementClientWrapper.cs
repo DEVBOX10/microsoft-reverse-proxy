@@ -6,15 +6,15 @@ using System.Collections.Generic;
 using System.Fabric;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.ReverseProxy.Utilities;
+using Yarp.ReverseProxy.Utilities;
 
-namespace Microsoft.ReverseProxy.ServiceFabric
+namespace Yarp.ReverseProxy.ServiceFabric
 {
     /// <summary>
     /// A wrapper class for the service fabric client SDK.
     /// See Microsoft documentation: https://docs.microsoft.com/en-us/dotnet/api/system.fabric.fabricclient.propertymanagementclient?view=azure-dotnet .
     /// </summary>
-    internal class PropertyManagementClientWrapper : IPropertyManagementClientWrapper
+    internal sealed class PropertyManagementClientWrapper : IPropertyManagementClientWrapper
     {
         // Represents the property management client used to perform management of names and properties.
         private readonly FabricClient.PropertyManagementClient _propertyManagementClient;

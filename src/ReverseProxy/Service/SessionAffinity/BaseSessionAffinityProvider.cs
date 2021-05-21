@@ -7,10 +7,10 @@ using System.Text;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
-using Microsoft.ReverseProxy.Abstractions;
-using Microsoft.ReverseProxy.RuntimeModel;
+using Yarp.ReverseProxy.Abstractions;
+using Yarp.ReverseProxy.RuntimeModel;
 
-namespace Microsoft.ReverseProxy.Service.SessionAffinity
+namespace Yarp.ReverseProxy.Service.SessionAffinity
 {
     internal abstract class BaseSessionAffinityProvider<T> : ISessionAffinityProvider
     {
@@ -20,15 +20,15 @@ namespace Microsoft.ReverseProxy.Service.SessionAffinity
 
         protected BaseSessionAffinityProvider(IDataProtectionProvider dataProtectionProvider, ILogger logger)
         {
-            _dataProtector = dataProtectionProvider?.CreateProtector(GetType().FullName) ?? throw new ArgumentNullException(nameof(dataProtectionProvider));
+            _dataProtector = dataProtectionProvider?.CreateProtector(GetType().FullName!) ?? throw new ArgumentNullException(nameof(dataProtectionProvider));
             Logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         public abstract string Mode { get; }
 
-        public virtual void AffinitizeRequest(HttpContext context, SessionAffinityOptions options, DestinationInfo destination)
+        public virtual void AffinitizeRequest(HttpContext context, SessionAffinityConfig config, DestinationState destination)
         {
-            if (!options.Enabled.GetValueOrDefault())
+            if (!config.Enabled.GetValueOrDefault())
             {
                 throw new InvalidOperationException($"Session affinity is disabled for cluster.");
             }
@@ -37,25 +37,25 @@ namespace Microsoft.ReverseProxy.Service.SessionAffinity
             if (!context.Items.ContainsKey(AffinityKeyId))
             {
                 var affinityKey = GetDestinationAffinityKey(destination);
-                SetAffinityKey(context, options, affinityKey);
+                SetAffinityKey(context, config, affinityKey);
             }
         }
 
-        public virtual AffinityResult FindAffinitizedDestinations(HttpContext context, IReadOnlyList<DestinationInfo> destinations, string clusterId, SessionAffinityOptions options)
+        public virtual AffinityResult FindAffinitizedDestinations(HttpContext context, IReadOnlyList<DestinationState> destinations, string clusterId, SessionAffinityConfig config)
         {
-            if (!options.Enabled.GetValueOrDefault())
+            if (!config.Enabled.GetValueOrDefault())
             {
                 throw new InvalidOperationException($"Session affinity is disabled for cluster {clusterId}.");
             }
 
-            var requestAffinityKey = GetRequestAffinityKey(context, options);
+            var requestAffinityKey = GetRequestAffinityKey(context, config);
 
             if (requestAffinityKey.Key == null)
             {
                 return new AffinityResult(null, requestAffinityKey.ExtractedSuccessfully ? AffinityStatus.AffinityKeyNotSet : AffinityStatus.AffinityKeyExtractionFailed);
             }
 
-            IReadOnlyList<DestinationInfo> matchingDestinations = null;
+            IReadOnlyList<DestinationState>? matchingDestinations = null;
             if (destinations.Count > 0)
             {
                 for (var i = 0; i < destinations.Count; i++)
@@ -90,21 +90,11 @@ namespace Microsoft.ReverseProxy.Service.SessionAffinity
             return new AffinityResult(matchingDestinations, AffinityStatus.OK);
         }
 
-        protected virtual string GetSettingValue(string key, SessionAffinityOptions options)
-        {
-            if (options.Settings == null || !options.Settings.TryGetValue(key, out var value))
-            {
-                throw new ArgumentException($"{nameof(CookieSessionAffinityProvider)} couldn't find the required parameter {key} in session affinity settings.", nameof(options));
-            }
+        protected abstract T GetDestinationAffinityKey(DestinationState destination);
 
-            return value;
-        }
+        protected abstract (T? Key, bool ExtractedSuccessfully) GetRequestAffinityKey(HttpContext context, SessionAffinityConfig config);
 
-        protected abstract T GetDestinationAffinityKey(DestinationInfo destination);
-
-        protected abstract (T Key, bool ExtractedSuccessfully) GetRequestAffinityKey(HttpContext context, SessionAffinityOptions options);
-
-        protected abstract void SetAffinityKey(HttpContext context, SessionAffinityOptions options, T unencryptedKey);
+        protected abstract void SetAffinityKey(HttpContext context, SessionAffinityConfig config, T unencryptedKey);
 
         protected string Protect(string unencryptedKey)
         {
@@ -119,7 +109,7 @@ namespace Microsoft.ReverseProxy.Service.SessionAffinity
             return Convert.ToBase64String(protectedData).TrimEnd('=');
         }
 
-        protected (string Key, bool ExtractedSuccessfully) Unprotect(string encryptedRequestKey)
+        protected (string? Key, bool ExtractedSuccessfully) Unprotect(string? encryptedRequestKey)
         {
             if (string.IsNullOrEmpty(encryptedRequestKey))
             {
@@ -158,17 +148,17 @@ namespace Microsoft.ReverseProxy.Service.SessionAffinity
 
         private static class Log
         {
-            private static readonly Action<ILogger, string, Exception> _affinityCannotBeEstablishedBecauseNoDestinationsFound = LoggerMessage.Define<string>(
+            private static readonly Action<ILogger, string, Exception?> _affinityCannotBeEstablishedBecauseNoDestinationsFound = LoggerMessage.Define<string>(
                 LogLevel.Warning,
                 EventIds.AffinityCannotBeEstablishedBecauseNoDestinationsFoundOnCluster,
                 "The request affinity cannot be established because no destinations are found on cluster `{clusterId}`.");
 
-            private static readonly Action<ILogger, Exception> _requestAffinityKeyDecryptionFailed = LoggerMessage.Define(
+            private static readonly Action<ILogger, Exception?> _requestAffinityKeyDecryptionFailed = LoggerMessage.Define(
                 LogLevel.Error,
                 EventIds.RequestAffinityKeyDecryptionFailed,
                 "The request affinity key decryption failed.");
 
-            private static readonly Action<ILogger, string, Exception> _destinationMatchingToAffinityKeyNotFound = LoggerMessage.Define<string>(
+            private static readonly Action<ILogger, string, Exception?> _destinationMatchingToAffinityKeyNotFound = LoggerMessage.Define<string>(
                 LogLevel.Warning,
                 EventIds.DestinationMatchingToAffinityKeyNotFound,
                 "Destination matching to the request affinity key is not found on cluster `{backnedId}`. Configured failure policy will be applied.");
@@ -178,7 +168,7 @@ namespace Microsoft.ReverseProxy.Service.SessionAffinity
                 _affinityCannotBeEstablishedBecauseNoDestinationsFound(logger, clusterId, null);
             }
 
-            public static void RequestAffinityKeyDecryptionFailed(ILogger logger, Exception ex)
+            public static void RequestAffinityKeyDecryptionFailed(ILogger logger, Exception? ex)
             {
                 _requestAffinityKeyDecryptionFailed(logger, ex);
             }

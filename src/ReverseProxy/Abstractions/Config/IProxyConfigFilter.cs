@@ -3,9 +3,9 @@
 
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.ReverseProxy.Abstractions;
+using Yarp.ReverseProxy.Abstractions;
 
-namespace Microsoft.ReverseProxy.Service
+namespace Yarp.ReverseProxy.Service
 {
     /// <summary>
     /// A configuration filter that will run each time the proxy configuration is loaded.
@@ -13,16 +13,15 @@ namespace Microsoft.ReverseProxy.Service
     public interface IProxyConfigFilter
     {
         /// <summary>
-        /// Allows modification of a Cluster configuration.
+        /// Allows modification of a cluster configuration.
         /// </summary>
-        /// <param name="id">The id for the cluster.</param>
-        /// <param name="cluster">The Cluster instance to configure.</param>
-        ValueTask<Cluster> ConfigureClusterAsync(Cluster cluster, CancellationToken cancel);
+        /// <param name="cluster">The <see cref="ClusterConfig"/> instance to configure.</param>
+        ValueTask<ClusterConfig> ConfigureClusterAsync(ClusterConfig cluster, CancellationToken cancel);
 
         /// <summary>
         /// Allows modification of a route configuration.
         /// </summary>
-        /// <param name="route">The ProxyRoute instance to configure.</param>
-        ValueTask<ProxyRoute> ConfigureRouteAsync(ProxyRoute route, CancellationToken cancel);
+        /// <param name="route">The <see cref="RouteConfig"/> instance to configure.</param>
+        ValueTask<RouteConfig> ConfigureRouteAsync(RouteConfig route, CancellationToken cancel);
     }
 }

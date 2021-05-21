@@ -4,15 +4,16 @@
 using System;
 using System.Linq;
 using Microsoft.AspNetCore.Http;
-using Microsoft.ReverseProxy.Abstractions;
-using Microsoft.ReverseProxy.Common.Tests;
-using Microsoft.ReverseProxy.RuntimeModel;
-using Microsoft.ReverseProxy.Service.LoadBalancing;
-using Microsoft.ReverseProxy.Service.Management;
-using Microsoft.ReverseProxy.Utilities;
 using Xunit;
+using Yarp.ReverseProxy.Abstractions;
+using Yarp.ReverseProxy.Common.Tests;
+using Yarp.ReverseProxy.Middleware;
+using Yarp.ReverseProxy.RuntimeModel;
+using Yarp.ReverseProxy.Service.LoadBalancing;
+using Yarp.ReverseProxy.Service.Management;
+using Yarp.ReverseProxy.Utilities;
 
-namespace Microsoft.ReverseProxy.Service.Proxy.Tests
+namespace Yarp.ReverseProxy.Service.Proxy.Tests
 {
     public class LoadBalancingPoliciesTests : TestAutoMockBase
     {
@@ -31,9 +32,9 @@ namespace Microsoft.ReverseProxy.Service.Proxy.Tests
         {
             var destinations = new[]
             {
-                new DestinationInfo("d1"),
-                new DestinationInfo("d2"),
-                new DestinationInfo("d3")
+                new DestinationState("d1"),
+                new DestinationState("d2"),
+                new DestinationState("d3")
             };
 
             var context = new DefaultHttpContext();
@@ -43,7 +44,7 @@ namespace Microsoft.ReverseProxy.Service.Proxy.Tests
             {
                 var result = loadBalancer.PickDestination(context, destinations);
                 Assert.Same(destinations[0], result);
-                result.ConcurrencyCounter.Increment();
+                result.ConcurrentRequestCount++;
             }
         }
 
@@ -52,9 +53,9 @@ namespace Microsoft.ReverseProxy.Service.Proxy.Tests
         {
             var destinations = new[]
             {
-                new DestinationInfo("d1"),
-                new DestinationInfo("d2"),
-                new DestinationInfo("d3")
+                new DestinationState("d1"),
+                new DestinationState("d2"),
+                new DestinationState("d3")
             };
 
             const int Iterations = 10;
@@ -68,7 +69,7 @@ namespace Microsoft.ReverseProxy.Service.Proxy.Tests
             {
                 var result = loadBalancer.PickDestination(context, destinations);
                 Assert.Same(destinations[RandomInstance.Sequence[i]], result);
-                result.ConcurrencyCounter.Increment();
+                result.ConcurrentRequestCount++;
             }
         }
 
@@ -77,11 +78,11 @@ namespace Microsoft.ReverseProxy.Service.Proxy.Tests
         {
             var destinations = new[]
             {
-                new DestinationInfo("d1"),
-                new DestinationInfo("d2"),
-                new DestinationInfo("d3")
+                new DestinationState("d1"),
+                new DestinationState("d2"),
+                new DestinationState("d3")
             };
-            destinations[0].ConcurrencyCounter.Increment();
+            destinations[0].ConcurrentRequestCount++;
 
             const int Iterations = 10;
             var random = new Random(42);
@@ -97,7 +98,7 @@ namespace Microsoft.ReverseProxy.Service.Proxy.Tests
                 var second = destinations[RandomInstance.Sequence[i * 2 + 1]];
                 var expected = first.ConcurrentRequestCount <= second.ConcurrentRequestCount ? first : second;
                 Assert.Same(expected, result);
-                result.ConcurrencyCounter.Increment();
+                result.ConcurrentRequestCount++;
             }
         }
 
@@ -106,11 +107,11 @@ namespace Microsoft.ReverseProxy.Service.Proxy.Tests
         {
             var destinations = new[]
             {
-                new DestinationInfo("d1"),
-                new DestinationInfo("d2"),
-                new DestinationInfo("d3")
+                new DestinationState("d1"),
+                new DestinationState("d2"),
+                new DestinationState("d3")
             };
-            destinations[0].ConcurrencyCounter.Increment();
+            destinations[0].ConcurrentRequestCount++;
 
             var context = new DefaultHttpContext();
             var loadBalancer = Create<LeastRequestsLoadBalancingPolicy>();
@@ -119,7 +120,7 @@ namespace Microsoft.ReverseProxy.Service.Proxy.Tests
             {
                 var result = loadBalancer.PickDestination(context, destinations);
                 Assert.Same(destinations.OrderBy(d => d.ConcurrentRequestCount).First(), result);
-                result.ConcurrencyCounter.Increment();
+                result.ConcurrentRequestCount++;
             }
         }
 
@@ -128,17 +129,20 @@ namespace Microsoft.ReverseProxy.Service.Proxy.Tests
         {
             var destinations = new[]
             {
-                new DestinationInfo("d1"),
-                new DestinationInfo("d2"),
-                new DestinationInfo("d3")
+                new DestinationState("d1"),
+                new DestinationState("d2"),
+                new DestinationState("d3")
             };
-            destinations[0].ConcurrencyCounter.Increment();
+            destinations[0].ConcurrentRequestCount++;
 
             var context = new DefaultHttpContext();
 
-            var routeConfig = new RouteConfig(new RouteInfo("route-1"), new ProxyRoute(), new ClusterInfo("cluster1", new DestinationManager()), transformer: null);
-            var endpoint = new Endpoint(default, new EndpointMetadataCollection(routeConfig), string.Empty);
-            context.SetEndpoint(endpoint);
+            var routeConfig = new RouteModel(new RouteConfig(), new ClusterState("cluster1"), HttpTransformer.Default);
+            var feature = new ReverseProxyFeature()
+            {
+                Route = routeConfig,
+            };
+            context.Features.Set<IReverseProxyFeature>(feature);
 
             var loadBalancer = Create<RoundRobinLoadBalancingPolicy>();
 
@@ -146,7 +150,7 @@ namespace Microsoft.ReverseProxy.Service.Proxy.Tests
             {
                 var result = loadBalancer.PickDestination(context, destinations);
                 Assert.Same(destinations[i % destinations.Length], result);
-                result.ConcurrencyCounter.Increment();
+                result.ConcurrentRequestCount++;
             }
         }
     }

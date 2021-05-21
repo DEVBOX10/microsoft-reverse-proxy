@@ -8,8 +8,9 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Tasks;
+using Yarp.ReverseProxy.Abstractions;
 
-namespace Microsoft.ReverseProxy.Telemetry
+namespace Yarp.ReverseProxy.Telemetry
 {
     /// <summary>
     /// ActivityPropagationHandler propagates the current Activity to the downstream service
@@ -18,12 +19,16 @@ namespace Microsoft.ReverseProxy.Telemetry
     {
         private const string RequestIdHeaderName = "Request-Id";
         private const string CorrelationContextHeaderName = "Correlation-Context";
+        private const string BaggageHeaderName = "baggage";
 
         private const string TraceParentHeaderName = "traceparent";
         private const string TraceStateHeaderName = "tracestate";
 
-        public ActivityPropagationHandler(HttpMessageHandler innerHandler) : base(innerHandler)
+        private readonly ActivityContextHeaders _activityContextHeaders;
+
+        public ActivityPropagationHandler(ActivityContextHeaders activityContextHeaders, HttpMessageHandler innerHandler) : base(innerHandler)
         {
+            _activityContextHeaders = activityContextHeaders;
         }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
@@ -76,10 +81,17 @@ namespace Microsoft.ReverseProxy.Telemetry
                     do
                     {
                         var item = e.Current;
-                        baggage.Add(new NameValueHeaderValue(Uri.EscapeDataString(item.Key), Uri.EscapeDataString(item.Value)).ToString());
+                        baggage.Add(new NameValueHeaderValue(Uri.EscapeDataString(item.Key), Uri.EscapeDataString(item.Value ?? string.Empty)).ToString());
                     }
                     while (e.MoveNext());
-                    request.Headers.TryAddWithoutValidation(CorrelationContextHeaderName, baggage);
+                    if (_activityContextHeaders.HasFlag(ActivityContextHeaders.Baggage))
+                    {
+                        request.Headers.TryAddWithoutValidation(BaggageHeaderName, baggage);
+                    }
+                    if (_activityContextHeaders.HasFlag(ActivityContextHeaders.CorrelationContext))
+                    {
+                        request.Headers.TryAddWithoutValidation(CorrelationContextHeaderName, baggage);
+                    }
                 }
             }
         }

@@ -4,56 +4,56 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Cors;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
-using Microsoft.ReverseProxy.Abstractions.RouteDiscovery.Contract;
-using Microsoft.ReverseProxy.RuntimeModel;
-using Microsoft.ReverseProxy.Service.Routing;
-using CorsConstants = Microsoft.ReverseProxy.Abstractions.RouteDiscovery.Contract.CorsConstants;
+using Microsoft.AspNetCore.Routing.Patterns;
+using Yarp.ReverseProxy.Abstractions.RouteDiscovery.Contract;
+using Yarp.ReverseProxy.RuntimeModel;
+using Yarp.ReverseProxy.Service.Routing;
+using CorsConstants = Yarp.ReverseProxy.Abstractions.RouteDiscovery.Contract.CorsConstants;
 
-namespace Microsoft.ReverseProxy
+namespace Yarp.ReverseProxy
 {
-    internal class ProxyEndpointFactory
+    internal sealed class ProxyEndpointFactory
     {
         private static readonly IAuthorizeData _defaultAuthorization = new AuthorizeAttribute();
         private static readonly IEnableCorsAttribute _defaultCors = new EnableCorsAttribute();
         private static readonly IDisableCorsAttribute _disableCors = new DisableCorsAttribute();
         private static readonly IAllowAnonymous _allowAnonymous = new AllowAnonymousAttribute();
 
-        private RequestDelegate _pipeline;
+        private RequestDelegate? _pipeline;
 
-        public Endpoint CreateEndpoint(RouteConfig route, IReadOnlyList<Action<EndpointBuilder>> conventions)
+        public Endpoint CreateEndpoint(RouteModel route, IReadOnlyList<Action<EndpointBuilder>> conventions)
         {
-            var proxyRoute = route.ProxyRoute;
-            var proxyMatch = proxyRoute.Match;
+            var config = route.Config;
+            var match = config.Match;
 
             // Catch-all pattern when no path was specified
-            var pathPattern = string.IsNullOrEmpty(proxyMatch.Path) ? "/{**catchall}" : proxyMatch.Path;
+            var pathPattern = string.IsNullOrEmpty(match.Path) ? "/{**catchall}" : match.Path;
 
             var endpointBuilder = new RouteEndpointBuilder(
                 requestDelegate: _pipeline ?? throw new InvalidOperationException("The pipeline hasn't been provided yet."),
-                routePattern: AspNetCore.Routing.Patterns.RoutePatternFactory.Parse(pathPattern),
-                order: proxyRoute.Order.GetValueOrDefault())
+                routePattern: RoutePatternFactory.Parse(pathPattern),
+                order: config.Order.GetValueOrDefault())
             {
-                DisplayName = proxyRoute.RouteId
+                DisplayName = config.RouteId
             };
 
             endpointBuilder.Metadata.Add(route);
 
-            if (proxyMatch.Hosts != null && proxyMatch.Hosts.Count != 0)
+            if (match.Hosts != null && match.Hosts.Count != 0)
             {
-                endpointBuilder.Metadata.Add(new HostAttribute(proxyMatch.Hosts.ToArray()));
+                endpointBuilder.Metadata.Add(new HostAttribute(match.Hosts.ToArray()));
             }
 
-            if (proxyRoute.Match.Headers != null && proxyRoute.Match.Headers.Count > 0)
+            if (match.Headers != null && match.Headers.Count > 0)
             {
-                var matchers = new List<HeaderMatcher>(proxyRoute.Match.Headers.Count);
-                foreach (var header in proxyRoute.Match.Headers)
+                var matchers = new List<HeaderMatcher>(match.Headers.Count);
+                foreach (var header in match.Headers)
                 {
                     matchers.Add(new HeaderMatcher(header.Name, header.Values, header.Mode, header.IsCaseSensitive));
                 }
@@ -62,19 +62,19 @@ namespace Microsoft.ReverseProxy
             }
 
             bool acceptCorsPreflight;
-            if (string.Equals(CorsConstants.Default, proxyRoute.CorsPolicy, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(CorsConstants.Default, config.CorsPolicy, StringComparison.OrdinalIgnoreCase))
             {
                 endpointBuilder.Metadata.Add(_defaultCors);
                 acceptCorsPreflight = true;
             }
-            else if (string.Equals(CorsConstants.Disable, proxyRoute.CorsPolicy, StringComparison.OrdinalIgnoreCase))
+            else if (string.Equals(CorsConstants.Disable, config.CorsPolicy, StringComparison.OrdinalIgnoreCase))
             {
                 endpointBuilder.Metadata.Add(_disableCors);
                 acceptCorsPreflight = true;
             }
-            else if (!string.IsNullOrEmpty(proxyRoute.CorsPolicy))
+            else if (!string.IsNullOrEmpty(config.CorsPolicy))
             {
-                endpointBuilder.Metadata.Add(new EnableCorsAttribute(proxyRoute.CorsPolicy));
+                endpointBuilder.Metadata.Add(new EnableCorsAttribute(config.CorsPolicy));
                 acceptCorsPreflight = true;
             }
             else
@@ -82,22 +82,22 @@ namespace Microsoft.ReverseProxy
                 acceptCorsPreflight = false;
             }
 
-            if (proxyMatch.Methods != null && proxyMatch.Methods.Count > 0)
+            if (match.Methods != null && match.Methods.Count > 0)
             {
-                endpointBuilder.Metadata.Add(new HttpMethodMetadata(proxyMatch.Methods, acceptCorsPreflight));
+                endpointBuilder.Metadata.Add(new HttpMethodMetadata(match.Methods, acceptCorsPreflight));
             }
 
-            if (string.Equals(AuthorizationConstants.Default, proxyRoute.AuthorizationPolicy, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(AuthorizationConstants.Default, config.AuthorizationPolicy, StringComparison.OrdinalIgnoreCase))
             {
                 endpointBuilder.Metadata.Add(_defaultAuthorization);
             }
-            else if (string.Equals(AuthorizationConstants.Anonymous, proxyRoute.AuthorizationPolicy, StringComparison.OrdinalIgnoreCase))
+            else if (string.Equals(AuthorizationConstants.Anonymous, config.AuthorizationPolicy, StringComparison.OrdinalIgnoreCase))
             {
                 endpointBuilder.Metadata.Add(_allowAnonymous);
             }
-            else if (!string.IsNullOrEmpty(proxyRoute.AuthorizationPolicy))
+            else if (!string.IsNullOrEmpty(config.AuthorizationPolicy))
             {
-                endpointBuilder.Metadata.Add(new AuthorizeAttribute(proxyRoute.AuthorizationPolicy));
+                endpointBuilder.Metadata.Add(new AuthorizeAttribute(config.AuthorizationPolicy));
             }
 
             for (var i = 0; i < conventions.Count; i++)

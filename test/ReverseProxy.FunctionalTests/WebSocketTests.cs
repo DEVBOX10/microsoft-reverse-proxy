@@ -1,5 +1,7 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -11,10 +13,10 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.ReverseProxy.Common;
 using Xunit;
+using Yarp.ReverseProxy.Common;
 
-namespace Microsoft.ReverseProxy
+namespace Yarp.ReverseProxy
 {
     public class WebSocketTests
     {
@@ -86,7 +88,7 @@ namespace Microsoft.ReverseProxy
 
                 Assert.Equal(HttpStatusCode.SwitchingProtocols, response.StatusCode);
 
-#if NET5_0
+#if NET
                 using var rawStream = await response.Content.ReadAsStreamAsync(cts.Token);
 #elif NETCOREAPP3_1
                 using var rawStream = await response.Content.ReadAsStreamAsync();
@@ -135,7 +137,7 @@ namespace Microsoft.ReverseProxy
                 var response = await client.SendAsync(request, cts.Token);
 
                 Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-#if NET5_0
+#if NET
                 Assert.Equal("Hello World", await response.Content.ReadAsStringAsync(cts.Token));
 #elif NETCOREAPP3_1
                 Assert.Equal("Hello World", await response.Content.ReadAsStringAsync());

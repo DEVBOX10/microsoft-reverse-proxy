@@ -4,12 +4,12 @@
 using System;
 using System.Collections.Generic;
 
-namespace Microsoft.ReverseProxy.ServiceFabric
+namespace Yarp.ReverseProxy.ServiceFabric
 {
     /// <summary>
     /// TODO .
     /// </summary>
-    internal class ApplicationWrapper
+    internal sealed class ApplicationWrapper
     {
         public Uri ApplicationName { get; set; }
 

@@ -5,50 +5,24 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
-using System.Text.RegularExpressions;
+using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing.Patterns;
-using Microsoft.ReverseProxy.Abstractions;
-using Microsoft.ReverseProxy.Abstractions.ClusterDiscovery.Contract;
-using Microsoft.ReverseProxy.Abstractions.RouteDiscovery.Contract;
-using Microsoft.ReverseProxy.Service.Config;
-using Microsoft.ReverseProxy.Service.HealthChecks;
-using Microsoft.ReverseProxy.Service.LoadBalancing;
-using Microsoft.ReverseProxy.Service.SessionAffinity;
-using Microsoft.ReverseProxy.Utilities;
-using CorsConstants = Microsoft.ReverseProxy.Abstractions.RouteDiscovery.Contract.CorsConstants;
+using Yarp.ReverseProxy.Abstractions;
+using Yarp.ReverseProxy.Abstractions.RouteDiscovery.Contract;
+using Yarp.ReverseProxy.Service.HealthChecks;
+using Yarp.ReverseProxy.Service.LoadBalancing;
+using Yarp.ReverseProxy.Service.SessionAffinity;
+using Yarp.ReverseProxy.Utilities;
+using CorsConstants = Yarp.ReverseProxy.Abstractions.RouteDiscovery.Contract.CorsConstants;
 
-namespace Microsoft.ReverseProxy.Service
+namespace Yarp.ReverseProxy.Service
 {
-    internal class ConfigValidator : IConfigValidator
+    internal sealed class ConfigValidator : IConfigValidator
     {
-        // TODO: IDN support. How strictly do we need to validate this anyways? This is app config, not external input.
-        /// <summary>
-        /// Regex explanation:
-        /// Either:
-        ///    A) A simple label without dashes
-        ///    B) A label containing dashes, but not as the first or last character.
-        /// </summary>
-        private const string DnsLabelRegexPattern = @"(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])";
-
-        /// <summary>
-        /// Regex explanation:
-        ///    - Optionally, allow "*." in the beginning
-        ///    - Then, one or more sequences of (LABEL ".")
-        ///    - Then, one LABEL
-        /// Where LABEL is described above in <see cref="DnsLabelRegexPattern"/>.
-        /// </summary>
-        private const string HostNameRegexPattern =
-            @"^" +
-            @"(?:\*\.)?" +
-            @"(?:" + DnsLabelRegexPattern + @"\.)*" +
-            DnsLabelRegexPattern +
-            @"$";
-        private static readonly Regex _hostNameRegex = new Regex(HostNameRegexPattern, RegexOptions.Compiled);
-
         private static readonly HashSet<string> _validMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "HEAD", "OPTIONS", "GET", "PUT", "POST", "PATCH", "DELETE", "TRACE",
@@ -58,7 +32,6 @@ namespace Microsoft.ReverseProxy.Service
         private readonly IAuthorizationPolicyProvider _authorizationPolicyProvider;
         private readonly ICorsPolicyProvider _corsPolicyProvider;
         private readonly IDictionary<string, ILoadBalancingPolicy> _loadBalancingPolicies;
-        private readonly IDictionary<string, ISessionAffinityProvider> _sessionAffinityProviders;
         private readonly IDictionary<string, IAffinityFailurePolicy> _affinityFailurePolicies;
         private readonly IDictionary<string, IActiveHealthCheckPolicy> _activeHealthCheckPolicies;
         private readonly IDictionary<string, IPassiveHealthCheckPolicy> _passiveHealthCheckPolicies;
@@ -68,7 +41,6 @@ namespace Microsoft.ReverseProxy.Service
             IAuthorizationPolicyProvider authorizationPolicyProvider,
             ICorsPolicyProvider corsPolicyProvider,
             IEnumerable<ILoadBalancingPolicy> loadBalancingPolicies,
-            IEnumerable<ISessionAffinityProvider> sessionAffinityProviders,
             IEnumerable<IAffinityFailurePolicy> affinityFailurePolicies,
             IEnumerable<IActiveHealthCheckPolicy> activeHealthCheckPolicies,
             IEnumerable<IPassiveHealthCheckPolicy> passiveHealthCheckPolicies)
@@ -77,14 +49,13 @@ namespace Microsoft.ReverseProxy.Service
             _authorizationPolicyProvider = authorizationPolicyProvider ?? throw new ArgumentNullException(nameof(authorizationPolicyProvider));
             _corsPolicyProvider = corsPolicyProvider ?? throw new ArgumentNullException(nameof(corsPolicyProvider));
             _loadBalancingPolicies = loadBalancingPolicies?.ToDictionaryByUniqueId(p => p.Name) ?? throw new ArgumentNullException(nameof(loadBalancingPolicies));
-            _sessionAffinityProviders = sessionAffinityProviders?.ToDictionaryByUniqueId(p => p.Mode) ?? throw new ArgumentNullException(nameof(sessionAffinityProviders));
             _affinityFailurePolicies = affinityFailurePolicies?.ToDictionaryByUniqueId(p => p.Name) ?? throw new ArgumentNullException(nameof(affinityFailurePolicies));
             _activeHealthCheckPolicies = activeHealthCheckPolicies?.ToDictionaryByUniqueId(p => p.Name) ?? throw new ArgumentNullException(nameof(activeHealthCheckPolicies));
             _passiveHealthCheckPolicies = passiveHealthCheckPolicies?.ToDictionaryByUniqueId(p => p.Name) ?? throw new ArgumentNullException(nameof(passiveHealthCheckPolicies));
         }
 
         // Note this performs all validation steps without short circuiting in order to report all possible errors.
-        public async ValueTask<IList<Exception>> ValidateRouteAsync(ProxyRoute route)
+        public async ValueTask<IList<Exception>> ValidateRouteAsync(RouteConfig route)
         {
             _ = route ?? throw new ArgumentNullException(nameof(route));
             var errors = new List<Exception>();
@@ -94,7 +65,7 @@ namespace Microsoft.ReverseProxy.Service
                 errors.Add(new ArgumentException("Missing Route Id."));
             }
 
-            errors.AddRange(_transformBuilder.Validate(route.Transforms));
+            errors.AddRange(_transformBuilder.ValidateRoute(route));
             await ValidateAuthorizationPolicyAsync(errors, route.AuthorizationPolicy, route.RouteId);
             await ValidateCorsPolicyAsync(errors, route.CorsPolicy, route.RouteId);
 
@@ -104,7 +75,7 @@ namespace Microsoft.ReverseProxy.Service
                 return errors;
             }
 
-            if ((route.Match.Hosts == null || route.Match.Hosts.Count == 0 || route.Match.Hosts.Any(host => string.IsNullOrEmpty(host))) && string.IsNullOrEmpty(route.Match.Path))
+            if ((route.Match.Hosts == null || !route.Match.Hosts.Any(host => !string.IsNullOrEmpty(host))) && string.IsNullOrEmpty(route.Match.Path))
             {
                 errors.Add(new ArgumentException($"Route '{route.RouteId}' requires Hosts or Path specified. Set the Path to '/{{**catchall}}' to match all requests."));
             }
@@ -118,16 +89,17 @@ namespace Microsoft.ReverseProxy.Service
         }
 
         // Note this performs all validation steps without short circuiting in order to report all possible errors.
-        public ValueTask<IList<Exception>> ValidateClusterAsync(Cluster cluster)
+        public ValueTask<IList<Exception>> ValidateClusterAsync(ClusterConfig cluster)
         {
             _ = cluster ?? throw new ArgumentNullException(nameof(cluster));
             var errors = new List<Exception>();
 
-            if (string.IsNullOrEmpty(cluster.Id))
+            if (string.IsNullOrEmpty(cluster.ClusterId))
             {
                 errors.Add(new ArgumentException("Missing Cluster Id."));
             }
 
+            errors.AddRange(_transformBuilder.ValidateCluster(cluster));
             ValidateLoadBalancing(errors, cluster);
             ValidateSessionAffinity(errors, cluster);
             ValidateProxyHttpClient(errors, cluster);
@@ -138,7 +110,7 @@ namespace Microsoft.ReverseProxy.Service
             return new ValueTask<IList<Exception>>(errors);
         }
 
-        private static void ValidateHost(IList<Exception> errors, IReadOnlyList<string> hosts, string routeId)
+        private static void ValidateHost(IList<Exception> errors, IReadOnlyList<string>? hosts, string routeId)
         {
             // Host is optional when Path is specified
             if (hosts == null || hosts.Count == 0)
@@ -148,14 +120,18 @@ namespace Microsoft.ReverseProxy.Service
 
             foreach (var host in hosts)
             {
-                if (string.IsNullOrEmpty(host) || !_hostNameRegex.IsMatch(host))
+                if (string.IsNullOrEmpty(host))
                 {
-                    errors.Add(new ArgumentException($"Invalid host name '{host}' for route '{routeId}'."));
+                    errors.Add(new ArgumentException($"Empty host name has been set for route '{routeId}'."));
+                }
+                else if (host.Contains("xn--", StringComparison.OrdinalIgnoreCase))
+                {
+                    errors.Add(new ArgumentException($"Punycode host name '{host}' has been set for route '{routeId}'. Use the unicode host name instead."));
                 }
             }
         }
 
-        private static void ValidatePath(IList<Exception> errors, string path, string routeId)
+        private static void ValidatePath(IList<Exception> errors, string? path, string routeId)
         {
             // Path is optional when Host is specified
             if (string.IsNullOrEmpty(path))
@@ -173,7 +149,7 @@ namespace Microsoft.ReverseProxy.Service
             }
         }
 
-        private static void ValidateMethods(IList<Exception> errors, IReadOnlyList<string> methods, string routeId)
+        private static void ValidateMethods(IList<Exception> errors, IReadOnlyList<string>? methods, string routeId)
         {
             // Methods are optional
             if (methods == null)
@@ -197,7 +173,7 @@ namespace Microsoft.ReverseProxy.Service
             }
         }
 
-        private static void ValidateHeaders(List<Exception> errors, IReadOnlyList<RouteHeader> headers, string routeId)
+        private static void ValidateHeaders(List<Exception> errors, IReadOnlyList<RouteHeader>? headers, string routeId)
         {
             // Headers are optional
             if (headers == null)
@@ -231,7 +207,7 @@ namespace Microsoft.ReverseProxy.Service
             }
         }
 
-        private async ValueTask ValidateAuthorizationPolicyAsync(IList<Exception> errors, string authorizationPolicyName, string routeId)
+        private async ValueTask ValidateAuthorizationPolicyAsync(IList<Exception> errors, string? authorizationPolicyName, string routeId)
         {
             if (string.IsNullOrEmpty(authorizationPolicyName))
             {
@@ -240,11 +216,21 @@ namespace Microsoft.ReverseProxy.Service
 
             if (string.Equals(AuthorizationConstants.Default, authorizationPolicyName, StringComparison.OrdinalIgnoreCase))
             {
+                var policy = await _authorizationPolicyProvider.GetPolicyAsync(authorizationPolicyName);
+                if (policy != null)
+                {
+                    errors.Add(new ArgumentException($"The application has registered an authorization policy named '{authorizationPolicyName}' that conflicts with the reserved authorization policy name used on this route. The registered policy name needs to be changed for this route to function."));
+                }
                 return;
             }
 
             if (string.Equals(AuthorizationConstants.Anonymous, authorizationPolicyName, StringComparison.OrdinalIgnoreCase))
             {
+                var policy = await _authorizationPolicyProvider.GetPolicyAsync(authorizationPolicyName);
+                if (policy != null)
+                {
+                    errors.Add(new ArgumentException($"The application has registered an authorization policy named '{authorizationPolicyName}' that conflicts with the reserved authorization policy name used on this route. The registered policy name needs to be changed for this route to function."));
+                }
                 return;
             }
 
@@ -262,7 +248,7 @@ namespace Microsoft.ReverseProxy.Service
             }
         }
 
-        private async ValueTask ValidateCorsPolicyAsync(IList<Exception> errors, string corsPolicyName, string routeId)
+        private async ValueTask ValidateCorsPolicyAsync(IList<Exception> errors, string? corsPolicyName, string routeId)
         {
             if (string.IsNullOrEmpty(corsPolicyName))
             {
@@ -271,11 +257,23 @@ namespace Microsoft.ReverseProxy.Service
 
             if (string.Equals(CorsConstants.Default, corsPolicyName, StringComparison.OrdinalIgnoreCase))
             {
+                var dummyHttpContext = new DefaultHttpContext();
+                var policy = await _corsPolicyProvider.GetPolicyAsync(dummyHttpContext, corsPolicyName);
+                if (policy != null)
+                {
+                    errors.Add(new ArgumentException($"The application has registered a CORS policy named '{corsPolicyName}' that conflicts with the reserved CORS policy name used on this route. The registered policy name needs to be changed for this route to function."));
+                }
                 return;
             }
 
             if (string.Equals(CorsConstants.Disable, corsPolicyName, StringComparison.OrdinalIgnoreCase))
             {
+                var dummyHttpContext = new DefaultHttpContext();
+                var policy = await _corsPolicyProvider.GetPolicyAsync(dummyHttpContext, corsPolicyName);
+                if (policy != null)
+                {
+                    errors.Add(new ArgumentException($"The application has registered a CORS policy named '{corsPolicyName}' that conflicts with the reserved CORS policy name used on this route. The registered policy name needs to be changed for this route to function."));
+                }
                 return;
             }
 
@@ -294,7 +292,7 @@ namespace Microsoft.ReverseProxy.Service
             }
         }
 
-        private void ValidateLoadBalancing(IList<Exception> errors, Cluster cluster)
+        private void ValidateLoadBalancing(IList<Exception> errors, ClusterConfig cluster)
         {
             var loadBalancingPolicy = cluster.LoadBalancingPolicy;
             if (string.IsNullOrEmpty(loadBalancingPolicy))
@@ -305,11 +303,11 @@ namespace Microsoft.ReverseProxy.Service
 
             if (!_loadBalancingPolicies.ContainsKey(loadBalancingPolicy))
             {
-                errors.Add(new ArgumentException($"No matching {nameof(ILoadBalancingPolicy)} found for the load balancing policy '{loadBalancingPolicy}' set on the cluster '{cluster.Id}'."));
+                errors.Add(new ArgumentException($"No matching {nameof(ILoadBalancingPolicy)} found for the load balancing policy '{loadBalancingPolicy}' set on the cluster '{cluster.ClusterId}'."));
             }
         }
 
-        private void ValidateSessionAffinity(IList<Exception> errors, Cluster cluster)
+        private void ValidateSessionAffinity(IList<Exception> errors, ClusterConfig cluster)
         {
             if (!(cluster.SessionAffinity?.Enabled ?? false))
             {
@@ -317,17 +315,7 @@ namespace Microsoft.ReverseProxy.Service
                 return;
             }
 
-            var affinityMode = cluster.SessionAffinity.Mode;
-            if (string.IsNullOrEmpty(affinityMode))
-            {
-                // The default.
-                affinityMode = SessionAffinityConstants.Modes.Cookie;
-            }
-
-            if (!_sessionAffinityProviders.ContainsKey(affinityMode))
-            {
-                errors.Add(new ArgumentException($"No matching {nameof(ISessionAffinityProvider)} found for the session affinity mode '{affinityMode}' set on the cluster '{cluster.Id}'."));
-            }
+            // Note some affinity validation takes place in AffinitizeTransformProvider.ValidateCluster.
 
             var affinityFailurePolicy = cluster.SessionAffinity.FailurePolicy;
             if (string.IsNullOrEmpty(affinityFailurePolicy))
@@ -338,11 +326,28 @@ namespace Microsoft.ReverseProxy.Service
 
             if (!_affinityFailurePolicies.ContainsKey(affinityFailurePolicy))
             {
-                errors.Add(new ArgumentException($"No matching IAffinityFailurePolicy found for the affinity failure policy name '{affinityFailurePolicy}' set on the cluster '{cluster.Id}'."));
+                errors.Add(new ArgumentException($"No matching IAffinityFailurePolicy found for the affinity failure policy name '{affinityFailurePolicy}' set on the cluster '{cluster.ClusterId}'."));
+            }
+
+            var cookieConfig = cluster.SessionAffinity.Cookie;
+
+            if (cookieConfig == null)
+            {
+                return;
+            }
+
+            if (cookieConfig.Expiration != null && cookieConfig.Expiration <= TimeSpan.Zero)
+            {
+                errors.Add(new ArgumentException($"Session affinity cookie expiration must be positive or null."));
+            }
+
+            if (cookieConfig.MaxAge != null && cookieConfig.MaxAge <= TimeSpan.Zero)
+            {
+                errors.Add(new ArgumentException($"Session affinity cookie max-age must be positive or null."));
             }
         }
 
-        private static void ValidateProxyHttpClient(IList<Exception> errors, Cluster cluster)
+        private static void ValidateProxyHttpClient(IList<Exception> errors, ClusterConfig cluster)
         {
             if (cluster.HttpClient == null)
             {
@@ -352,11 +357,25 @@ namespace Microsoft.ReverseProxy.Service
 
             if (cluster.HttpClient.MaxConnectionsPerServer != null && cluster.HttpClient.MaxConnectionsPerServer <= 0)
             {
-                errors.Add(new ArgumentException($"Max connections per server limit set on the cluster '{cluster.Id}' must be positive."));
+                errors.Add(new ArgumentException($"Max connections per server limit set on the cluster '{cluster.ClusterId}' must be positive."));
             }
+#if NET
+            var encoding = cluster.HttpClient.RequestHeaderEncoding;
+            if (encoding != null)
+            {
+                try
+                {
+                    Encoding.GetEncoding(encoding);
+                }
+                catch (ArgumentException aex)
+                {
+                    errors.Add(new ArgumentException($"Invalid header encoding '{encoding}'.", aex));
+                }
+            }
+#endif
         }
 
-        private static void ValidateProxyHttpRequest(IList<Exception> errors, Cluster cluster)
+        private static void ValidateProxyHttpRequest(IList<Exception> errors, ClusterConfig cluster)
         {
             if (cluster.HttpRequest == null)
             {
@@ -373,7 +392,7 @@ namespace Microsoft.ReverseProxy.Service
             }
         }
 
-        private void ValidateActiveHealthCheck(IList<Exception> errors, Cluster cluster)
+        private void ValidateActiveHealthCheck(IList<Exception> errors, ClusterConfig cluster)
         {
             if (!(cluster.HealthCheck?.Active?.Enabled ?? false))
             {
@@ -385,25 +404,26 @@ namespace Microsoft.ReverseProxy.Service
             var policy = activeOptions.Policy;
             if (string.IsNullOrEmpty(policy))
             {
-                errors.Add(new ArgumentException($"Active health policy name is not set on the cluster '{cluster.Id}'"));
+                // default policy
+                policy = HealthCheckConstants.ActivePolicy.ConsecutiveFailures;
             }
-            else if (!_activeHealthCheckPolicies.ContainsKey(policy))
+            if (!_activeHealthCheckPolicies.ContainsKey(policy))
             {
-                errors.Add(new ArgumentException($"No matching {nameof(IActiveHealthCheckPolicy)} found for the active health check policy name '{policy}' set on the cluster '{cluster.Id}'."));
+                errors.Add(new ArgumentException($"No matching {nameof(IActiveHealthCheckPolicy)} found for the active health check policy name '{policy}' set on the cluster '{cluster.ClusterId}'."));
             }
 
             if (activeOptions.Interval != null && activeOptions.Interval <= TimeSpan.Zero)
             {
-                errors.Add(new ArgumentException($"Destination probing interval set on the cluster '{cluster.Id}' must be positive."));
+                errors.Add(new ArgumentException($"Destination probing interval set on the cluster '{cluster.ClusterId}' must be positive."));
             }
 
             if (activeOptions.Timeout != null && activeOptions.Timeout <= TimeSpan.Zero)
             {
-                errors.Add(new ArgumentException($"Destination probing timeout set on the cluster '{cluster.Id}' must be positive."));
+                errors.Add(new ArgumentException($"Destination probing timeout set on the cluster '{cluster.ClusterId}' must be positive."));
             }
         }
 
-        private static void ValidatePassiveHealthCheck(IList<Exception> errors, Cluster cluster)
+        private void ValidatePassiveHealthCheck(IList<Exception> errors, ClusterConfig cluster)
         {
             if (!(cluster.HealthCheck?.Passive?.Enabled ?? false))
             {
@@ -415,12 +435,17 @@ namespace Microsoft.ReverseProxy.Service
             var policy = passiveOptions.Policy;
             if (string.IsNullOrEmpty(policy))
             {
-                errors.Add(new ArgumentException($"Passive health policy name is not set on the cluster '{cluster.Id}'"));
+                // default policy
+                policy = HealthCheckConstants.PassivePolicy.TransportFailureRate;
+            }
+            if (!_passiveHealthCheckPolicies.ContainsKey(policy))
+            {
+                errors.Add(new ArgumentException($"No matching {nameof(IPassiveHealthCheckPolicy)} found for the passive health check policy name '{policy}' set on the cluster '{cluster.ClusterId}'."));
             }
 
             if (passiveOptions.ReactivationPeriod != null && passiveOptions.ReactivationPeriod <= TimeSpan.Zero)
             {
-                errors.Add(new ArgumentException($"Unhealthy destination reactivation period set on the cluster '{cluster.Id}' must be positive."));
+                errors.Add(new ArgumentException($"Unhealthy destination reactivation period set on the cluster '{cluster.ClusterId}' must be positive."));
             }
         }
     }

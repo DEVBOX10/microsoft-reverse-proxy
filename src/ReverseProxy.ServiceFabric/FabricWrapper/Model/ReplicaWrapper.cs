@@ -5,12 +5,12 @@ using System.Fabric;
 using System.Fabric.Health;
 using System.Fabric.Query;
 
-namespace Microsoft.ReverseProxy.ServiceFabric
+namespace Yarp.ReverseProxy.ServiceFabric
 {
     /// <summary>
     /// TODO .
     /// </summary>
-    internal class ReplicaWrapper
+    internal sealed class ReplicaWrapper
     {
         public long Id { get; set; }
         public string ReplicaAddress { get; set; }

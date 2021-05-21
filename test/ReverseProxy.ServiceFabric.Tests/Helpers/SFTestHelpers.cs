@@ -1,15 +1,14 @@
-// <copyright file="SFTestHelpers.cs" company="Microsoft Corporation">
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// </copyright>
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
 
 using System;
 using System.Collections.Generic;
 using System.Fabric.Health;
 using System.Fabric.Query;
-using Microsoft.ReverseProxy.Abstractions;
 using Microsoft.ServiceFabric.Services.Communication;
+using Yarp.ReverseProxy.Abstractions;
 
-namespace Microsoft.ReverseProxy.ServiceFabric.Tests
+namespace Yarp.ReverseProxy.ServiceFabric.Tests
 {
     /// <summary>
     /// Factory helper class for tests related to Service Fabric integration.
@@ -71,12 +70,12 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
         }
 
         /// <summary>
-        /// Build a <see cref="Destination" /> from a Service Fabric <see cref="ReplicaWrapper" />.
+        /// Build a <see cref="DestinationConfig" /> from a Service Fabric <see cref="ReplicaWrapper" />.
         /// </summary>
         /// <remarks>
         /// The address JSON of the replica is expected to have exactly one endpoint, and that one will be used.
         /// </remarks>
-        internal static KeyValuePair<string, Destination> BuildDestinationFromReplica(ReplicaWrapper replica, string healthListenerName = null)
+        internal static KeyValuePair<string, DestinationConfig> BuildDestinationFromReplica(ReplicaWrapper replica, string healthListenerName = null)
         {
             ServiceEndpointCollection.TryParseEndpointsString(replica.ReplicaAddress, out var endpoints);
             endpoints.TryGetFirstEndpointAddress(out var address);
@@ -89,7 +88,7 @@ namespace Microsoft.ReverseProxy.ServiceFabric.Tests
 
             return KeyValuePair.Create(
                 replica.Id.ToString(),
-                new Destination
+                new DestinationConfig
                 {
                     Address = address,
                     Health = healthAddressUri,

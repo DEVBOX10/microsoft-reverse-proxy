@@ -3,11 +3,11 @@
 
 using System;
 
-namespace Microsoft.ReverseProxy.Service.Proxy
+namespace Yarp.ReverseProxy.Service.Proxy
 {
-    internal class ProxyErrorFeature : IProxyErrorFeature
+    internal sealed class ProxyErrorFeature : IProxyErrorFeature
     {
-        internal ProxyErrorFeature(ProxyError error, Exception ex)
+        internal ProxyErrorFeature(ProxyError error, Exception? ex)
         {
             Error = error;
             Exception = ex;
@@ -21,6 +21,6 @@ namespace Microsoft.ReverseProxy.Service.Proxy
         /// <summary>
         /// The error, if any.
         /// </summary>
-        public Exception Exception { get; }
+        public Exception? Exception { get; }
     }
 }
