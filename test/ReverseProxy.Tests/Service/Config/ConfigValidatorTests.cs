@@ -8,7 +8,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Xunit;
 using Yarp.ReverseProxy.Abstractions;
-using Yarp.ReverseProxy.Abstractions.ClusterDiscovery.Contract;
 using Yarp.ReverseProxy.Service.HealthChecks;
 using Yarp.ReverseProxy.Service.LoadBalancing;
 using Yarp.ReverseProxy.Service.Proxy;
@@ -24,6 +23,9 @@ namespace Yarp.ReverseProxy.Service.Tests
             var passivePolicy = new Mock<IPassiveHealthCheckPolicy>();
             passivePolicy.SetupGet(p => p.Name).Returns("passive0");
             services.AddSingleton(passivePolicy.Object);
+            var availableDestinationsPolicy = new Mock<IAvailableDestinationsPolicy>();
+            availableDestinationsPolicy.SetupGet(p => p.Name).Returns("availableDestinations0");
+            services.AddSingleton(availableDestinationsPolicy.Object);
             services.AddOptions();
             services.AddLogging();
             services.AddRouting();
@@ -624,9 +626,10 @@ namespace Yarp.ReverseProxy.Service.Tests
             var cluster = new ClusterConfig
             {
                 ClusterId = "cluster1",
-                SessionAffinity = new SessionAffinityConfig()
+                SessionAffinity = new SessionAffinityConfig
                 {
-                    Enabled = true
+                    Enabled = true,
+                    AffinityKeyName = "SomeKey"
                 }
             };
 
@@ -636,7 +639,7 @@ namespace Yarp.ReverseProxy.Service.Tests
         }
 
         [Fact]
-        public async Task EnableSession_InvalidPolicy_Fails()
+        public async Task EnableSessionAffinity_InvalidPolicy_Fails()
         {
             var services = CreateServices();
             var validator = services.GetRequiredService<IConfigValidator>();
@@ -644,10 +647,11 @@ namespace Yarp.ReverseProxy.Service.Tests
             var cluster = new ClusterConfig
             {
                 ClusterId = "cluster1",
-                SessionAffinity = new SessionAffinityConfig()
+                SessionAffinity = new SessionAffinityConfig
                 {
                     Enabled = true,
-                    FailurePolicy = "Invalid"
+                    FailurePolicy = "Invalid",
+                    AffinityKeyName = "SomeKey"
                 }
             };
 
@@ -655,6 +659,30 @@ namespace Yarp.ReverseProxy.Service.Tests
 
             var ex = Assert.Single(errors);
             Assert.Equal("No matching IAffinityFailurePolicy found for the affinity failure policy name 'Invalid' set on the cluster 'cluster1'.", ex.Message);
+        }
+
+        [Theory]
+        [InlineData("")]
+        [InlineData(null)]
+        public async Task EnableSessionAffinity_AffinityIsNotSet_Fails(string key)
+        {
+            var services = CreateServices();
+            var validator = services.GetRequiredService<IConfigValidator>();
+
+            var cluster = new ClusterConfig
+            {
+                ClusterId = "cluster1",
+                SessionAffinity = new SessionAffinityConfig
+                {
+                    Enabled = true,
+                    AffinityKeyName = key
+                }
+            };
+
+            var errors = await validator.ValidateClusterAsync(cluster);
+
+            var ex = Assert.Single(errors);
+            Assert.Equal("Affinity key name set on the cluster 'cluster1' must not be null.", ex.Message);
         }
 
         [Fact]
@@ -844,6 +872,53 @@ namespace Yarp.ReverseProxy.Service.Tests
 
             var errors = await validator.ValidateClusterAsync(cluster);
 
+            Assert.Equal(1, errors.Count);
+            Assert.Contains(expectedError, errors[0].Message);
+            Assert.IsType<ArgumentException>(errors[0]);
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        [InlineData("availableDestinations0")]
+        public async Task SetAvailableDestinationsPolicy_Works(string policy)
+        {
+            var services = CreateServices();
+            var validator = services.GetRequiredService<IConfigValidator>();
+
+            var cluster = new ClusterConfig
+            {
+                ClusterId = "cluster1",
+                HealthCheck = new HealthCheckConfig
+                {
+                    AvailableDestinationsPolicy = policy
+                }
+            };
+
+            var errors = await validator.ValidateClusterAsync(cluster);
+
+            Assert.Empty(errors);
+        }
+
+        [Fact]
+        public async Task SetAvailableDestinationsPolicy_Invalid()
+        {
+            var services = CreateServices();
+            var validator = services.GetRequiredService<IConfigValidator>();
+            const string policy = "Unknown1";
+
+            var cluster = new ClusterConfig
+            {
+                ClusterId = "cluster1",
+                HealthCheck = new HealthCheckConfig
+                {
+                    AvailableDestinationsPolicy = policy
+                }
+            };
+
+            var errors = await validator.ValidateClusterAsync(cluster);
+
+            const string expectedError = "No matching IAvailableDestinationsPolicy found for the available destinations policy 'Unknown1' set on the cluster.";
             Assert.Equal(1, errors.Count);
             Assert.Contains(expectedError, errors[0].Message);
             Assert.IsType<ArgumentException>(errors[0]);
