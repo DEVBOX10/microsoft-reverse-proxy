@@ -4,13 +4,12 @@
 using System;
 using System.Collections.Generic;
 using System.Security.Authentication;
-using System.Text;
 using FluentAssertions;
 using Xunit;
-using Yarp.ReverseProxy.Abstractions;
-using Yarp.ReverseProxy.Service.LoadBalancing;
-using Yarp.ReverseProxy.Service.Proxy;
-using Yarp.ReverseProxy.Service.SessionAffinity;
+using Yarp.ReverseProxy.Configuration;
+using Yarp.ReverseProxy.LoadBalancing;
+using Yarp.ReverseProxy.Proxy;
+using Yarp.ReverseProxy.SessionAffinity;
 
 namespace Yarp.ReverseProxy.ServiceFabric.Tests
 {
@@ -39,6 +38,7 @@ namespace Yarp.ReverseProxy.ServiceFabric.Tests
                 { "YARP.Backend.SessionAffinity.Cookie.SameSite", "Strict" },
                 { "YARP.Backend.SessionAffinity.Cookie.SecurePolicy", "SameAsRequest" },
                 { "YARP.Backend.HttpRequest.Timeout", "00:00:17" },
+                { "YARP.Backend.HttpRequest.AllowResponseBuffering", "true" },
                 { "YARP.Backend.HttpRequest.Version", "1.1" },
 #if NET
                 { "YARP.Backend.HttpRequest.VersionPolicy", "RequestVersionExact" },
@@ -94,6 +94,7 @@ namespace Yarp.ReverseProxy.ServiceFabric.Tests
                 {
                     Timeout = TimeSpan.FromSeconds(17),
                     Version = new Version(1, 1),
+                    AllowResponseBuffering = true,
 #if NET
                     VersionPolicy = System.Net.Http.HttpVersionPolicy.RequestVersionExact
 #endif
