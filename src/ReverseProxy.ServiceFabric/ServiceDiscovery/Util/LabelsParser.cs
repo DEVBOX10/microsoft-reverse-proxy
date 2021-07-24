@@ -12,7 +12,7 @@ using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Primitives;
 using Yarp.ReverseProxy.Configuration;
-using Yarp.ReverseProxy.Proxy;
+using Yarp.ReverseProxy.Forwarder;
 
 namespace Yarp.ReverseProxy.ServiceFabric
 {
@@ -282,7 +282,7 @@ namespace Yarp.ReverseProxy.ServiceFabric
                 SessionAffinity = new SessionAffinityConfig
                 {
                     Enabled = GetLabel<bool?>(labels, "YARP.Backend.SessionAffinity.Enabled", null),
-                    Mode = GetLabel<string>(labels, "YARP.Backend.SessionAffinity.Mode", null),
+                    Policy = GetLabel<string>(labels, "YARP.Backend.SessionAffinity.Policy", null),
                     FailurePolicy = GetLabel<string>(labels, "YARP.Backend.SessionAffinity.FailurePolicy", null),
                     AffinityKeyName = GetLabel<string>(labels, "YARP.Backend.SessionAffinity.AffinityKeyName", null),
                     Cookie = new SessionAffinityCookieConfig
@@ -297,7 +297,7 @@ namespace Yarp.ReverseProxy.ServiceFabric
                         Expiration = GetTimeSpanLabel(labels, "YARP.Backend.SessionAffinity.Cookie.Expiration", null)
                     }
                 },
-                HttpRequest = new RequestProxyConfig
+                HttpRequest = new ForwarderRequestConfig
                 {
                     Timeout = GetTimeSpanLabel(labels, "YARP.Backend.HttpRequest.Timeout", null),
                     Version = !string.IsNullOrEmpty(versionLabel) ? Version.Parse(versionLabel + (versionLabel.Contains('.') ? "" : ".0")) : null,

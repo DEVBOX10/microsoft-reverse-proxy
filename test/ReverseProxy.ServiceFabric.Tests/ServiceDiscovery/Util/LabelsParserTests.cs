@@ -8,7 +8,7 @@ using FluentAssertions;
 using Xunit;
 using Yarp.ReverseProxy.Configuration;
 using Yarp.ReverseProxy.LoadBalancing;
-using Yarp.ReverseProxy.Proxy;
+using Yarp.ReverseProxy.Forwarder;
 using Yarp.ReverseProxy.SessionAffinity;
 
 namespace Yarp.ReverseProxy.ServiceFabric.Tests
@@ -26,7 +26,7 @@ namespace Yarp.ReverseProxy.ServiceFabric.Tests
                 { "YARP.Backend.BackendId", "MyCoolClusterId" },
                 { "YARP.Backend.LoadBalancingPolicy", "LeastRequests" },
                 { "YARP.Backend.SessionAffinity.Enabled", "true" },
-                { "YARP.Backend.SessionAffinity.Mode", "Cookie" },
+                { "YARP.Backend.SessionAffinity.Policy", "Cookie" },
                 { "YARP.Backend.SessionAffinity.FailurePolicy", "Return503Error" },
                 { "YARP.Backend.SessionAffinity.AffinityKeyName", "Key1" },
                 { "YARP.Backend.SessionAffinity.Cookie.Domain", "localhost" },
@@ -75,8 +75,8 @@ namespace Yarp.ReverseProxy.ServiceFabric.Tests
                 SessionAffinity = new SessionAffinityConfig
                 {
                     Enabled = true,
-                    Mode = SessionAffinityConstants.Modes.Cookie,
-                    FailurePolicy = SessionAffinityConstants.AffinityFailurePolicies.Return503Error,
+                    Policy = SessionAffinityConstants.Policies.Cookie,
+                    FailurePolicy = SessionAffinityConstants.FailurePolicies.Return503Error,
                     AffinityKeyName = "Key1",
                     Cookie = new SessionAffinityCookieConfig
                     {
@@ -90,7 +90,7 @@ namespace Yarp.ReverseProxy.ServiceFabric.Tests
                         SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.SameAsRequest
                     }
                 },
-                HttpRequest = new RequestProxyConfig
+                HttpRequest = new ForwarderRequestConfig
                 {
                     Timeout = TimeSpan.FromSeconds(17),
                     Version = new Version(1, 1),
@@ -160,7 +160,7 @@ namespace Yarp.ReverseProxy.ServiceFabric.Tests
                     AffinityKeyName = "Key1",
                     Cookie = new SessionAffinityCookieConfig()
                 },
-                HttpRequest = new RequestProxyConfig(),
+                HttpRequest = new ForwarderRequestConfig(),
                 HealthCheck = new HealthCheckConfig
                 {
                     Active = new ActiveHealthCheckConfig(),

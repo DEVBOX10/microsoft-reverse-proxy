@@ -16,7 +16,7 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 using Yarp.ReverseProxy.LoadBalancing;
-using Yarp.ReverseProxy.Proxy;
+using Yarp.ReverseProxy.Forwarder;
 
 namespace Yarp.ReverseProxy.Configuration.ConfigProvider.Tests
 {
@@ -76,7 +76,7 @@ namespace Yarp.ReverseProxy.Configuration.ConfigProvider.Tests
                         {
                             Enabled = true,
                             FailurePolicy = "Return503Error",
-                            Mode = "Cookie",
+                            Policy = "Cookie",
                             AffinityKeyName = "Key1",
                             Cookie = new SessionAffinityCookieConfig
                             {
@@ -100,7 +100,7 @@ namespace Yarp.ReverseProxy.Configuration.ConfigProvider.Tests
                             EnableMultipleHttp2Connections = true,
 #endif
                         },
-                        HttpRequest = new RequestProxyConfig()
+                        HttpRequest = new ForwarderRequestConfig()
                         {
                             Timeout = TimeSpan.FromSeconds(60),
                             Version = Version.Parse("1.0"),
@@ -188,7 +188,7 @@ namespace Yarp.ReverseProxy.Configuration.ConfigProvider.Tests
             ""LoadBalancingPolicy"": ""Random"",
             ""SessionAffinity"": {
                 ""Enabled"": true,
-                ""Mode"": ""Cookie"",
+                ""Policy"": ""Cookie"",
                 ""FailurePolicy"": ""Return503Error"",
                 ""AffinityKeyName"": ""Key1"",
                 ""Cookie"": {
@@ -487,7 +487,7 @@ namespace Yarp.ReverseProxy.Configuration.ConfigProvider.Tests
             Assert.Equal(LoadBalancingPolicies.Random, abstractCluster1.LoadBalancingPolicy);
             Assert.Equal(cluster1.SessionAffinity.Enabled, abstractCluster1.SessionAffinity.Enabled);
             Assert.Equal(cluster1.SessionAffinity.FailurePolicy, abstractCluster1.SessionAffinity.FailurePolicy);
-            Assert.Equal(cluster1.SessionAffinity.Mode, abstractCluster1.SessionAffinity.Mode);
+            Assert.Equal(cluster1.SessionAffinity.Policy, abstractCluster1.SessionAffinity.Policy);
             Assert.Equal(cluster1.SessionAffinity.AffinityKeyName, abstractCluster1.SessionAffinity.AffinityKeyName);
             Assert.Equal(cluster1.SessionAffinity.Cookie.Domain, abstractCluster1.SessionAffinity.Cookie.Domain);
             Assert.Equal(cluster1.SessionAffinity.Cookie.Expiration, abstractCluster1.SessionAffinity.Cookie.Expiration);
