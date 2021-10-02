@@ -7,7 +7,7 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Xunit;
-using Yarp.ReverseProxy.Common.Tests;
+using Yarp.Tests.Common;
 using Yarp.ReverseProxy.Utilities.Tests;
 
 namespace Yarp.ReverseProxy.Transforms.Tests
@@ -55,6 +55,23 @@ namespace Yarp.ReverseProxy.Transforms.Tests
 
             var expectedHeaders = expected.Split("; ", StringSplitOptions.RemoveEmptyEntries);
             Assert.Equal(expectedHeaders, httpContext.Response.Headers.Select(h => h.Key));
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task RemoveHeader_ResponseNull_DoNothing(bool always)
+        {
+            var httpContext = new DefaultHttpContext();
+            httpContext.Response.StatusCode = 502;
+
+            var transform = new ResponseHeaderRemoveTransform("header1", always);
+            await transform.ApplyAsync(new ResponseTransformContext()
+            {
+                HttpContext = httpContext,
+                ProxyResponse = null,
+                HeadersCopied = false,
+            });
         }
     }
 }
