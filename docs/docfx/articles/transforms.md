@@ -10,10 +10,10 @@ Request and response body transforms are not provided by YARP but you can write 
 ## Defaults
 The following transforms are enabled by default for all routes. They can be configured or disabled as shown later in this document.
 - Host - Suppress the incoming request's Host header. The proxy request will default to the host name specified in the destination server address. See [RequestHeaderOriginalHost](#requestheaderoriginalhost) below.
-- X-Forwarded-For - Appends the client's IP address to the X-Forwarded-For header. See [X-Forwarded](#x-forwarded) below.
-- X-Forwarded-Proto - Appends the request's original scheme (http/https) to the X-Forwarded-Proto header. See [X-Forwarded](#x-forwarded) below.
-- X-Forwarded-Host - Appends the request's original Host to the X-Forwarded-Host header. See [X-Forwarded](#x-forwarded) below.
-- X-Forwarded-Prefix - Appends the request's original PathBase, if any, to the X-Forwarded-Prefix header. See [X-Forwarded](#x-forwarded) below.
+- X-Forwarded-For - Sets the client's IP address to the X-Forwarded-For header. See [X-Forwarded](#x-forwarded) below.
+- X-Forwarded-Proto - Sets the request's original scheme (http/https) to the X-Forwarded-Proto header. See [X-Forwarded](#x-forwarded) below.
+- X-Forwarded-Host - Sets the request's original Host to the X-Forwarded-Host header. See [X-Forwarded](#x-forwarded) below.
+- X-Forwarded-Prefix - Sets the request's original PathBase, if any, to the X-Forwarded-Prefix header. See [X-Forwarded](#x-forwarded) below.
 
 For example the following incoming request to `http://IncomingHost:5000/path`:
 ```
@@ -79,10 +79,10 @@ Here is an example of common transforms:
       "route2" : {
         "ClusterId": "cluster1",
         "Match": {
-          "Path": "/api/{plugin}/stuff/{*remainder}"
+          "Path": "/api/{plugin}/stuff/{**remainder}"
         },
         "Transforms": [
-          { "PathPattern": "/foo/{plugin}/bar/{remainder}" },
+          { "PathPattern": "/foo/{plugin}/bar/{**remainder}" },
           {
             "QueryStringParameter": "q",
             "Append": "plugin"
@@ -235,27 +235,27 @@ This will set the request path with the given value.
 
 Config:
 ```JSON
-{ "PathPattern": "/my/{plugin}/api/{remainder}" }
+{ "PathPattern": "/my/{plugin}/api/{**remainder}" }
 ```
 Code:
 ```csharp
-routeConfig = routeConfig.WithTransformPathRouteValues(pattern: new PathString("/my/{plugin}/api/{remainder}"));
+routeConfig = routeConfig.WithTransformPathRouteValues(pattern: new PathString("/my/{plugin}/api/{**remainder}"));
 ```
 ```C#
-transformBuilderContext.AddPathRouteValues(pattern: new PathString("/my/{plugin}/api/{remainder}"));
+transformBuilderContext.AddPathRouteValues(pattern: new PathString("/my/{plugin}/api/{**remainder}"));
 ```
 
-This will set the request path with the given value and replace any `{}` segments with the associated route value. `{}` segments without a matching route value are removed. See ASP.NET Core's [routing docs](https://docs.microsoft.com/aspnet/core/fundamentals/routing#route-template-reference) for more information about route templates.
+This will set the request path with the given value and replace any `{}` segments with the associated route value. `{}` segments without a matching route value are removed. The final `{}` segment can be marked as `{**remainder}` to indicate this is a catch-all segment that may contain multiple path segments. See ASP.NET Core's [routing docs](https://docs.microsoft.com/aspnet/core/fundamentals/routing#route-template-reference) for more information about route templates.
 
 Example:
 
 | Step | Value |
 |------|-------|
-| Route definition | `/api/{plugin}/stuff/{*remainder}` |
+| Route definition | `/api/{plugin}/stuff/{**remainder}` |
 | Request path | `/api/v1/stuff/more/stuff` |
 | Plugin value | `v1` |
 | Remainder value | `more/stuff` |
-| PathPattern | `/my/{plugin}/api/{remainder}` |
+| PathPattern | `/my/{plugin}/api/{**remainder}` |
 | Result | `/my/v1/api/more/stuff` |
 
 ### QueryValueParameter
@@ -688,6 +688,10 @@ X-Client-Cert: SSdtIGEgY2VydGlmaWNhdGU...
 ```
 As the inbound and outbound connections are independent, there needs to be a way to pass any inbound client certificate to the destination server. This transform causes the client certificate taken from `HttpContext.Connection.ClientCertificate` to be Base64 encoded and set as the value for the given header name. The destination server may need that certificate to authenticate the client. There is no standard that defines this header and implementations vary, check your destination server for support.
 
+Servers do minimal validation on the incoming client certificate by default. The certificate should be validated either in the proxy or the destination, see the [client certificate auth](https://docs.microsoft.com/aspnet/core/security/authentication/certauth) docs for details.
+
+This transform will only apply if the client certificate is already present on the connection. See the [optional certs doc](https://docs.microsoft.com/aspnet/core/security/authentication/certauth#optional-client-certificates) if it needs to be requested from the client on a per-route basis.
+
 ## Response and Response Trailers
 
 All response headers and trailers are copied from the proxied response to the outgoing client response by default. Response and response trailer transforms may specify if they should be applied only for successful responses or for all responses.
@@ -724,7 +728,7 @@ This sets if all proxy response headers are copied to the client response. This 
 |-----|-------|---------|----------|
 | ResponseHeader | The header name | (none) | yes |
 | Set/Append | The header value | (none) | yes |
-| When | Success/Always | Success | no |
+| When | Success/Always/Failure | Success | no |
 
 Config:
 ```JSON
@@ -736,10 +740,10 @@ Config:
 ```
 Code:
 ```csharp
-routeConfig = routeConfig.WithTransformResponseHeader(headerName: "HeaderName", value: "value", append: true, always: false);
+routeConfig = routeConfig.WithTransformResponseHeader(headerName: "HeaderName", value: "value", append: true, ResponseCondition.Success);
 ```
 ```C#
-transformBuilderContext.AddResponseHeader(headerName: "HeaderName", value: "value", append: true, always: false);
+transformBuilderContext.AddResponseHeader(headerName: "HeaderName", value: "value", append: true, always: ResponseCondition.Success);
 ```
 Example:
 ```
@@ -749,7 +753,7 @@ HeaderName: value
 This sets or appends the value for the named response header. Set replaces any existing header. Append adds an additional header with the given value.
 Note: setting "" as a header value is not recommended and can cause an undefined behavior.
 
-`When` specifies if the response header should be included for successful responses or for all responses. Any response with a status code less than 400 is considered a success.
+`When` specifies if the response header should be included for all, successful, or failure responses. Any response with a status code less than 400 is considered a success.
 
 ### ResponseHeaderRemove
 
@@ -758,7 +762,7 @@ Note: setting "" as a header value is not recommended and can cause an undefined
 | Key | Value | Default | Required |
 |-----|-------|---------|----------|
 | ResponseHeaderRemove | The header name | (none) | yes |
-| When | Success/Always | Success | no |
+| When | Success/Always/Failure | Success | no |
 
 Config:
 ```JSON
@@ -769,10 +773,10 @@ Config:
 ```
 Code:
 ```csharp
-routeConfig = routeConfig.WithTransformResponseHeaderRemove(headerName: "HeaderName", always: false);
+routeConfig = routeConfig.WithTransformResponseHeaderRemove(headerName: "HeaderName", ResponseCondition.Success);
 ```
 ```C#
-transformBuilderContext.AddResponseHeaderRemove(headerName: "HeaderName", always: false);
+transformBuilderContext.AddResponseHeaderRemove(headerName: "HeaderName", ResponseCondition.Success);
 ```
 Example:
 ```
@@ -782,7 +786,7 @@ AnotherHeader: another-value
 
 This removes the named response header.
 
-`When` specifies if the response header should be included for successful responses or for all responses. Any response with a status code less than 400 is considered a success.
+`When` specifies if the response header should be removed for all, successful, or failure responses. Any response with a status code less than 400 is considered a success.
 
 ### ResponseHeadersAllowed
 
@@ -847,7 +851,7 @@ This sets if all proxy response trailers are copied to the client response. This
 |-----|-------|---------|----------|
 | ResponseTrailer | The header name | (none) | yes |
 | Set/Append | The header value | (none) | yes |
-| When | Success/Always | Success | no |
+| When | Success/Always/Failure | Success | no |
 
 Config:
 ```JSON
@@ -859,10 +863,10 @@ Config:
 ```
 Code:
 ```csharp
-routeConfig = routeConfig.WithTransformResponseTrailer(headerName: "HeaderName", value: "value", append: true, always: false);
+routeConfig = routeConfig.WithTransformResponseTrailer(headerName: "HeaderName", value: "value", append: true, ResponseCondition.Success);
 ```
 ```C#
-transformBuilderContext.AddResponseTrailer(headerName: "HeaderName", value: "value", append: true, always: false);
+transformBuilderContext.AddResponseTrailer(headerName: "HeaderName", value: "value", append: true, ResponseCondition.Success);
 ```
 Example:
 ```
@@ -880,7 +884,7 @@ ResponseTrailer follows the same structure and guidance as [ResponseHeader](tran
 | Key | Value | Default | Required |
 |-----|-------|---------|----------|
 | ResponseTrailerRemove | The header name | (none) | yes |
-| When | Success/Always | Success | no |
+| When | Success/Always/Failure | Success | no |
 
 Config:
 ```JSON
@@ -891,10 +895,10 @@ Config:
 ```
 Code:
 ```csharp
-routeConfig = routeConfig.WithTransformResponseTrailerRemove(headerName: "HeaderName", always: false);
+routeConfig = routeConfig.WithTransformResponseTrailerRemove(headerName: "HeaderName", ResponseCondition.Success);
 ```
 ```C#
-transformBuilderContext.AddResponseTrailerRemove(headerName: "HeaderName", always: false);
+transformBuilderContext.AddResponseTrailerRemove(headerName: "HeaderName", ResponseCondition.Success);
 ```
 Example:
 ```

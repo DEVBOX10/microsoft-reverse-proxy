@@ -14,7 +14,7 @@ namespace Yarp.ReverseProxy.Configuration
     {
         /// <summary>
         /// Name of the header to look for.
-        /// This field is required.
+        /// This field is case insensitive and required.
         /// </summary>
         public string Name { get; init; } = default!;
 
@@ -55,7 +55,10 @@ namespace Yarp.ReverseProxy.Configuration
 
         public override int GetHashCode()
         {
-            return HashCode.Combine(Mode, IsCaseSensitive,
+            return HashCode.Combine(
+                Name?.GetHashCode(StringComparison.OrdinalIgnoreCase),
+                Mode,
+                IsCaseSensitive,
                 IsCaseSensitive
                     ? CaseSensitiveEqualHelper.GetHashCode(Values)
                     : CaseInsensitiveEqualHelper.GetHashCode(Values));

@@ -37,7 +37,7 @@ namespace Yarp.ReverseProxy.ServiceFabric.Tests
                 { "YARP.Backend.SessionAffinity.Cookie.Path", "mypath" },
                 { "YARP.Backend.SessionAffinity.Cookie.SameSite", "Strict" },
                 { "YARP.Backend.SessionAffinity.Cookie.SecurePolicy", "SameAsRequest" },
-                { "YARP.Backend.HttpRequest.Timeout", "00:00:17" },
+                { "YARP.Backend.HttpRequest.ActivityTimeout", "00:00:17" },
                 { "YARP.Backend.HttpRequest.AllowResponseBuffering", "true" },
                 { "YARP.Backend.HttpRequest.Version", "1.1" },
 #if NET
@@ -56,7 +56,6 @@ namespace Yarp.ReverseProxy.ServiceFabric.Tests
                 { "YARP.Backend.HttpClient.DangerousAcceptAnyServerCertificate", "true" },
                 { "YARP.Backend.HttpClient.MaxConnectionsPerServer", "1000" },
                 { "YARP.Backend.HttpClient.SslProtocols", "Tls12" },
-                { "YARP.Backend.HttpClient.ActivityContextHeaders", "BaggageAndCorrelationContext" },
 #if NET
                 { "YARP.Backend.HttpClient.EnableMultipleHttp2Connections", "false" },
                 { "YARP.Backend.HttpClient.RequestHeaderEncoding", "utf-8" },
@@ -92,7 +91,7 @@ namespace Yarp.ReverseProxy.ServiceFabric.Tests
                 },
                 HttpRequest = new ForwarderRequestConfig
                 {
-                    Timeout = TimeSpan.FromSeconds(17),
+                    ActivityTimeout = TimeSpan.FromSeconds(17),
                     Version = new Version(1, 1),
                     AllowResponseBuffering = true,
 #if NET
@@ -122,7 +121,6 @@ namespace Yarp.ReverseProxy.ServiceFabric.Tests
                 },
                 HttpClient = new HttpClientConfig
                 {
-                    ActivityContextHeaders = ActivityContextHeaders.BaggageAndCorrelationContext,
                     DangerousAcceptAnyServerCertificate = true,
 #if NET
                     EnableMultipleHttp2Connections = false,

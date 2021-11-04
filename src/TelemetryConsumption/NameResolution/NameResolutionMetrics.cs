@@ -10,6 +10,8 @@ namespace Yarp.Telemetry.Consumption
     /// </summary>
     public sealed class NameResolutionMetrics
     {
+        public NameResolutionMetrics() => Timestamp = DateTime.UtcNow;
+
         /// <summary>
         /// Timestamp of when this <see cref="NameResolutionMetrics"/> instance was created.
         /// </summary>
@@ -25,6 +27,11 @@ namespace Yarp.Telemetry.Consumption
         /// </summary>
         public TimeSpan AverageLookupDuration { get; internal set; }
 
-        internal NameResolutionMetrics() { }
+#if NET6_0_OR_GREATER
+        /// <summary>
+        /// Number of DNS lookups that have started but not yet completed or failed.
+        /// </summary>
+        public long CurrentDnsLookups { get; internal set; }
+#endif
     }
 }

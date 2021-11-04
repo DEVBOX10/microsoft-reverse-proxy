@@ -29,7 +29,7 @@ namespace Yarp.ReverseProxy.ServiceFabric
         /// </summary>
         private static readonly Regex _allowedHeaderNamesRegex = new Regex(@"^\[\d\d*\]$", RegexOptions.Compiled);
 
-
+        /// <summary>
         /// Requires all transform names to follow the .[0]. pattern to simulate indexing in an array
         /// </summary>
         private static readonly Regex _allowedTransformNamesRegex = new Regex(@"^\[\d\d*\]$", RegexOptions.Compiled);
@@ -268,7 +268,6 @@ namespace Yarp.ReverseProxy.ServiceFabric
 
             var versionLabel = GetLabel<string>(labels, "YARP.Backend.HttpRequest.Version", null);
 
-            var activityContextHeadersLabel = GetLabel<string>(labels, "YARP.Backend.HttpClient.ActivityContextHeaders", null);
             var sslProtocolsLabel = GetLabel<string>(labels, "YARP.Backend.HttpClient.SslProtocols", null);
 
 #if NET
@@ -299,7 +298,7 @@ namespace Yarp.ReverseProxy.ServiceFabric
                 },
                 HttpRequest = new ForwarderRequestConfig
                 {
-                    Timeout = GetTimeSpanLabel(labels, "YARP.Backend.HttpRequest.Timeout", null),
+                    ActivityTimeout = GetTimeSpanLabel(labels, "YARP.Backend.HttpRequest.ActivityTimeout", null),
                     Version = !string.IsNullOrEmpty(versionLabel) ? Version.Parse(versionLabel + (versionLabel.Contains('.') ? "" : ".0")) : null,
                     AllowResponseBuffering = GetLabel<bool?>(labels, "YARP.Backend.HttpRequest.AllowResponseBuffering", null),
 #if NET
@@ -328,7 +327,6 @@ namespace Yarp.ReverseProxy.ServiceFabric
                 {
                     DangerousAcceptAnyServerCertificate = GetLabel<bool?>(labels, "YARP.Backend.HttpClient.DangerousAcceptAnyServerCertificate", null),
                     MaxConnectionsPerServer = GetLabel<int?>(labels, "YARP.Backend.HttpClient.MaxConnectionsPerServer", null),
-                    ActivityContextHeaders = !string.IsNullOrEmpty(activityContextHeadersLabel) ? Enum.Parse<ActivityContextHeaders>(activityContextHeadersLabel) : null,
                     SslProtocols = !string.IsNullOrEmpty(sslProtocolsLabel) ? Enum.Parse<SslProtocols>(sslProtocolsLabel) : null,
 #if NET
                     EnableMultipleHttp2Connections = GetLabel<bool?>(labels, "YARP.Backend.HttpClient.EnableMultipleHttp2Connections", null),

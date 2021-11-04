@@ -26,6 +26,7 @@ namespace Yarp.ReverseProxy.Transforms
         /// <see cref="ResponseTrailersTransformContext.HeadersCopied"/> is not set.
         /// This ordering allows multiple transforms to mutate the same header.
         /// </summary>
+        /// <param name="context">The transform context.</param>
         /// <param name="headerName">The name of the header to take.</param>
         /// <returns>The response header value, or StringValues.Empty if none.</returns>
         public static StringValues TakeHeader(ResponseTrailersTransformContext context, string headerName)
@@ -45,7 +46,7 @@ namespace Yarp.ReverseProxy.Transforms
             Debug.Assert(context.ProxyResponse != null);
 
             var responseTrailersFeature = context.HttpContext.Features.Get<IHttpResponseTrailersFeature>();
-            var responseTrailers = responseTrailersFeature.Trailers;
+            var responseTrailers = responseTrailersFeature?.Trailers;
             // Support should have already been checked by the caller.
             Debug.Assert(responseTrailers != null);
             Debug.Assert(!responseTrailers.IsReadOnly);
@@ -70,7 +71,7 @@ namespace Yarp.ReverseProxy.Transforms
         public static void SetHeader(ResponseTrailersTransformContext context, string headerName, StringValues values)
         {
             var responseTrailersFeature = context.HttpContext.Features.Get<IHttpResponseTrailersFeature>();
-            var responseTrailers = responseTrailersFeature.Trailers;
+            var responseTrailers = responseTrailersFeature?.Trailers;
             // Support should have already been checked by the caller.
             Debug.Assert(responseTrailers != null);
             Debug.Assert(!responseTrailers.IsReadOnly);
