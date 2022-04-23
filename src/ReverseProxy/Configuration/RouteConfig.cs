@@ -8,7 +8,7 @@ using Yarp.ReverseProxy.Utilities;
 namespace Yarp.ReverseProxy.Configuration;
 
 /// <summary>
-/// Describes a route that matches incoming requests based on a the <see cref="Match"/> criteria
+/// Describes a route that matches incoming requests based on the <see cref="Match"/> criteria
 /// and proxies matching requests to the cluster identified by its <see cref="ClusterId"/>.
 /// </summary>
 public sealed record RouteConfig
@@ -64,7 +64,7 @@ public sealed record RouteConfig
 
     public bool Equals(RouteConfig? other)
     {
-        if (other == null)
+        if (other is null)
         {
             return false;
         }

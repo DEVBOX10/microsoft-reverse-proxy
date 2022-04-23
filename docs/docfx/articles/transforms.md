@@ -1,7 +1,5 @@
 # Request and Response Transforms
 
-Introduced: preview2
-
 ## Introduction
 When proxying a request it's common to modify parts of the request or response to adapt to the destination server's requirements or to flow additional data such as the client's original IP address. This process is implemented via Transforms. Types of transforms are defined globally for the application and then individual routes supply the parameters to enable and configure those transforms. The original request objects are not modified by these transforms, only the proxy requests.
 
@@ -111,7 +109,7 @@ Developers that want to integrate their custom transforms with the `Transforms` 
 
 ### From Code
 
-Transforms can be added to routes programmatically by calling the [AddTransforms](xref:Microsoft.Extensions.DependencyInjection.ReverseProxyServiceCollectionExtensions) method.
+Transforms can be added to routes programmatically by calling the [AddTransforms](xref:Microsoft.Extensions.DependencyInjection.ReverseProxyServiceCollectionExtensions.AddTransforms*) method.
 
 `AddTransforms` can be called from `Startup.ConfigureServices` to provide a callback for configuring transforms. This callback is invoked each time a route is built or rebuilt and allows the developer to inspect the [RouteConfig](xref:Yarp.ReverseProxy.Configuration.RouteConfig) information and conditionally add transforms for it.
 
@@ -947,15 +945,15 @@ Only header1 and header2 are copied from the proxy response.
 
 ### AddRequestTransform
 
-[AddRequestTransform](xref:Yarp.ReverseProxy.Transforms.TransformBuilderContextFuncExtensions) is a `TransformBuilderContext` extension method that defines a request transform as a `Func<RequestTransformContext, ValueTask>`. This allows creating a custom request transform without implementing a `RequestTransform` derived class.
+[AddRequestTransform](xref:Yarp.ReverseProxy.Transforms.TransformBuilderContextFuncExtensions.AddRequestTransform*) is a `TransformBuilderContext` extension method that defines a request transform as a `Func<RequestTransformContext, ValueTask>`. This allows creating a custom request transform without implementing a `RequestTransform` derived class.
 
 ### AddResponseTransform
 
-[AddResponseTransform](xref:Yarp.ReverseProxy.Transforms.TransformBuilderContextFuncExtensions) is a `TransformBuilderContext` extension method that defines a response transform as a `Func<ResponseTransformContext, ValueTask>`. This allows creating a custom response transform without implementing a `ResponseTransform` derived class.
+[AddResponseTransform](xref:Yarp.ReverseProxy.Transforms.TransformBuilderContextFuncExtensions.AddResponseTransform*) is a `TransformBuilderContext` extension method that defines a response transform as a `Func<ResponseTransformContext, ValueTask>`. This allows creating a custom response transform without implementing a `ResponseTransform` derived class.
 
 ### AddResponseTrailersTransform
 
-[AddResponseTrailersTransform](xref:Yarp.ReverseProxy.Transforms.TransformBuilderContextFuncExtensions) is a `TransformBuilderContext` extension method that defines a response trailers transform as a `Func<ResponseTrailersTransformContext, ValueTask>`. This allows creating a custom response trailers transform without implementing a `ResponseTrailersTransform` derived class.
+[AddResponseTrailersTransform](xref:Yarp.ReverseProxy.Transforms.TransformBuilderContextFuncExtensions.AddResponseTrailersTransform*) is a `TransformBuilderContext` extension method that defines a response trailers transform as a `Func<ResponseTrailersTransformContext, ValueTask>`. This allows creating a custom response trailers transform without implementing a `ResponseTrailersTransform` derived class.
 
 ### RequestTransform
 
@@ -968,6 +966,70 @@ All response transforms must derive from the abstract base class [ResponseTransf
 ### ResponseTrailersTransform
 
 All response trailers transforms must derive from the abstract base class [ResponseTrailersTransform](xref:Yarp.ReverseProxy.Transforms.ResponseTrailersTransform). These can freely modify the client HttpResponse trailers. These run after the response body and should not attempt to modify the response headers or body. Consider also adding a parametrized extension method on `TransformBuilderContext` for discoverability and easy of use.
+
+### Request body transforms
+
+YARP does not provide any built in transforms for modifying the request body. However, the body can be modified in custom transforms.
+
+Be careful about which kinds of requests are modified, how much data gets buffered, enforcing timeouts, parsing untrusted input, and updating the body-related headers like `Content-Length`.
+
+The below example uses simple, inefficient buffering to transform requests. A more efficient implementation would wrap and replace `HttpContext.Request.Body` with a stream that performed the needed modifications as data was proxied from client to server. That would also require removing the Content-Length header since the final length would not be known in advance.
+
+This sample requires YARP 1.1, see https://github.com/microsoft/reverse-proxy/pull/1569.
+
+```C#
+.AddTransforms(context =>
+{
+    context.AddRequestTransform(async requestContext =>
+    {
+        using var reader = new StreamReader(requestContext.HttpContext.Request.Body);
+        // TODO: size limits, timeouts
+        var body = await reader.ReadToEndAsync();
+        if (!string.IsNullOrEmpty(body))
+        {
+            body = body.Replace("Alpha", "Charlie");
+            var bytes = Encoding.UTF8.GetBytes(body);
+            // Change Content-Length to match the modified body, or remove it.
+            requestContext.HttpContext.Request.Body = new MemoryStream(bytes);
+            // Request headers are copied before transforms are invoked, update any needed headers on the ProxyRequest
+            requestContext.ProxyRequest.Content.Headers.ContentLength = bytes.Length;
+        }
+    });
+});
+```
+
+### Response body transforms
+
+YARP does not provide any built in transforms for modifying the response body. However, the body can be modified in custom transforms.
+
+Be careful about which kinds of responses are modified, how much data gets buffered, enforcing timeouts, parsing untrusted input, and updating the body-related headers like `Content-Length`. You may need to decompress content before modifying it, as indicated by the Content-Encoding header, and afterwards re-compress it or remove the header.
+
+The below example uses simple, inefficient buffering to transform responses. A more efficient implementation would wrap the stream returned by `ReadAsStreamAsync()` with a stream that performed the needed modifications as data was proxied from client to server. That would also require removing the Content-Length header since the final length would not be known in advance.
+
+```C#
+.AddTransforms(context =>
+{
+    context.AddResponseTransform(async responseContext =>
+    {
+        var stream = await responseContext.ProxyResponse.Content.ReadAsStreamAsync();
+        using var reader = new StreamReader(stream);
+        // TODO: size limits, timeouts
+        var body = await reader.ReadToEndAsync();
+
+        if (!string.IsNullOrEmpty(body))
+        {
+            responseContext.SuppressResponseBody = true;
+
+            body = body.Replace("Bravo", "Charlie");
+            var bytes = Encoding.UTF8.GetBytes(body);
+            // Change Content-Length to match the modified body, or remove it.
+            responseContext.HttpContext.Response.ContentLength = bytes.Length;
+            // Response headers are copied before transforms are invoked, update any needed headers on the HttpContext.Response.
+            await responseContext.HttpContext.Response.Body.WriteAsync(bytes);
+        }
+    });
+});
+```
 
 ### ITransformProvider
 
