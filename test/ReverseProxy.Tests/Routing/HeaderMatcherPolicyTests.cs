@@ -33,10 +33,10 @@ public class HeaderMatcherPolicyTests
             (0, CreateEndpoint("header", new[] { "abc", "def" }, HeaderMatchMode.HeaderPrefix)),
             (0, CreateEndpoint("header2", new[] { "abc", "def" }, HeaderMatchMode.HeaderPrefix)),
 
-            (0, CreateEndpoint("header", new string[0], HeaderMatchMode.Exists, isCaseSensitive: true)),
-            (0, CreateEndpoint("header", new string[0], HeaderMatchMode.Exists)),
-            (0, CreateEndpoint("header", new string[0], HeaderMatchMode.Exists, isCaseSensitive: true)),
-            (0, CreateEndpoint("header", new string[0], HeaderMatchMode.Exists)),
+            (0, CreateEndpoint("header", Array.Empty<string>(), HeaderMatchMode.Exists, isCaseSensitive: true)),
+            (0, CreateEndpoint("header", Array.Empty<string>(), HeaderMatchMode.Exists)),
+            (0, CreateEndpoint("header", Array.Empty<string>(), HeaderMatchMode.Exists, isCaseSensitive: true)),
+            (0, CreateEndpoint("header", Array.Empty<string>(), HeaderMatchMode.Exists)),
         };
         var sut = new HeaderMatcherPolicy();
 
@@ -67,7 +67,7 @@ public class HeaderMatcherPolicyTests
         {
             (0, CreateEndpoint(new[]
             {
-                new HeaderMatcher("header", new string[0], HeaderMatchMode.Exists, isCaseSensitive: true),
+                new HeaderMatcher("header", Array.Empty<string>(), HeaderMatchMode.Exists, isCaseSensitive: true),
                 new HeaderMatcher("header", new[] { "abc" }, HeaderMatchMode.HeaderPrefix, isCaseSensitive: true),
                 new HeaderMatcher("header", new[] { "cbcabc" }, HeaderMatchMode.Contains, isCaseSensitive: true),
                 new HeaderMatcher("header", new[] { "abc" }, HeaderMatchMode.ExactHeader, isCaseSensitive: true)
@@ -80,7 +80,7 @@ public class HeaderMatcherPolicyTests
             })),
             (1, CreateEndpoint(new[]
             {
-                new HeaderMatcher("header", new string[0], HeaderMatchMode.Exists, isCaseSensitive: true),
+                new HeaderMatcher("header", Array.Empty<string>(), HeaderMatchMode.Exists, isCaseSensitive: true),
                 new HeaderMatcher("header", new[] { "abc" }, HeaderMatchMode.ExactHeader, isCaseSensitive: true)
             })),
 
@@ -115,15 +115,15 @@ public class HeaderMatcherPolicyTests
     {
         var scenarios = new[]
         {
-            CreateEndpoint("org-id", new string[0], HeaderMatchMode.Exists),
+            CreateEndpoint("org-id", Array.Empty<string>(), HeaderMatchMode.Exists),
             CreateEndpoint("org-id", new[] { "abc" }),
             CreateEndpoint("org-id", new[] { "abc", "def" }),
-            CreateEndpoint("org-id", new string[0], HeaderMatchMode.Exists, isDynamic: true),
+            CreateEndpoint("org-id", Array.Empty<string>(), HeaderMatchMode.Exists, isDynamic: true),
             CreateEndpoint("org-id", new[] { "abc" }, isDynamic: true),
             CreateEndpoint("org-id", null, HeaderMatchMode.Exists, isDynamic: true),
             CreateEndpoint(new[]
             {
-                new HeaderMatcher("header", new string[0], HeaderMatchMode.Exists, isCaseSensitive: true),
+                new HeaderMatcher("header", Array.Empty<string>(), HeaderMatchMode.Exists, isCaseSensitive: true),
                 new HeaderMatcher("header", new[] { "abc" }, HeaderMatchMode.ExactHeader, isCaseSensitive: true)
             })
         };
@@ -150,18 +150,21 @@ public class HeaderMatcherPolicyTests
     }
 
     [Theory]
-    [InlineData(null, false)]
-    [InlineData("", false)]
-    [InlineData("abc", true)]
-    public async Task ApplyAsync_MatchingScenarios_AnyHeaderValue(string incomingHeaderValue, bool shouldMatch)
+    [InlineData(null, HeaderMatchMode.Exists, false)]
+    [InlineData("", HeaderMatchMode.Exists, false)]
+    [InlineData("abc", HeaderMatchMode.Exists, true)]
+    [InlineData(null, HeaderMatchMode.NotExists, true)]
+    [InlineData("", HeaderMatchMode.NotExists, false)]
+    [InlineData("abc", HeaderMatchMode.NotExists, false)]
+    public async Task ApplyAsync_MatchingScenarios_AnyHeaderValue(string incomingHeaderValue, HeaderMatchMode mode, bool shouldMatch)
     {
         var context = new DefaultHttpContext();
         if (incomingHeaderValue is not null)
         {
-            context.Request.Headers.Add("org-id", incomingHeaderValue);
+            context.Request.Headers["org-id"] = incomingHeaderValue;
         }
 
-        var endpoint = CreateEndpoint("org-id", new string[0], HeaderMatchMode.Exists);
+        var endpoint = CreateEndpoint("org-id", Array.Empty<string>(), mode);
         var candidates = new CandidateSet(new[] { endpoint }, new RouteValueDictionary[1], new int[1]);
         var sut = new HeaderMatcherPolicy();
 
@@ -301,7 +304,7 @@ public class HeaderMatcherPolicyTests
         var context = new DefaultHttpContext();
         if (incomingHeaderValues is not null)
         {
-            context.Request.Headers.Add("org-id", incomingHeaderValues.Split(';'));
+            context.Request.Headers["org-id"] = incomingHeaderValues.Split(';');
         }
 
         var endpoint = CreateEndpoint("org-id", new[] { headerValue }, headerValueMatchMode, isCaseSensitive);
@@ -445,7 +448,7 @@ public class HeaderMatcherPolicyTests
         var context = new DefaultHttpContext();
         if (incomingHeaderValues is not null)
         {
-            context.Request.Headers.Add("org-id", incomingHeaderValues.Split(';'));
+            context.Request.Headers["org-id"] = incomingHeaderValues.Split(';');
         }
 
         var endpoint = CreateEndpoint("org-id", new[] { header1Value, header2Value }, headerValueMatchMode, isCaseSensitive);
@@ -481,7 +484,7 @@ public class HeaderMatcherPolicyTests
         bool shouldMatch)
     {
         var context = new DefaultHttpContext();
-        context.Request.Headers.Add(headerName, incomingHeaderValue);
+        context.Request.Headers[headerName] = incomingHeaderValue;
 
         var endpoint = CreateEndpoint(headerName, new[] { headerValue }, headerValueMatchMode, true);
         var candidates = new CandidateSet(new[] { endpoint }, new RouteValueDictionary[1], new int[1]);
@@ -508,11 +511,11 @@ public class HeaderMatcherPolicyTests
         var context = new DefaultHttpContext();
         if (sendHeader1)
         {
-            context.Request.Headers.Add("header1", "value1");
+            context.Request.Headers["header1"] = "value1";
         }
         if (sendHeader2)
         {
-            context.Request.Headers.Add("header2", "value2");
+            context.Request.Headers["header2"] = "value2";
         }
 
         var candidates = new CandidateSet(new[] { endpoint }, new RouteValueDictionary[1], new int[1]);

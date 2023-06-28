@@ -130,6 +130,7 @@ For additional fields see [ClusterConfig](xref:Yarp.ReverseProxy.Configuration.C
         // matches /something/* and routes to "allclusterprops"
         "ClusterId": "allclusterprops", // Name of one of the clusters
         "Order" : 100, // Lower numbers have higher precedence
+        "MaxRequestBodySize" : 1000000, // In bytes. An optional override of the server's limit (30MB default). Set to -1 to disable.
         "Authorization Policy" : "Anonymous", // Name of the policy or "Default", "Anonymous"
         "CorsPolicy" : "Default", // Name of the CorsPolicy to apply to this route or "Default", "Disable"
         "Match": {
@@ -140,7 +141,7 @@ For additional fields see [ClusterConfig](xref:Yarp.ReverseProxy.Configuration.C
             {
               "Name": "MyCustomHeader", // Name of the header
               "Values": [ "value1", "value2", "another value" ], // Matches are against any of these values
-              "Mode": "ExactHeader", // or "HeaderPrefix", "Exists" , "Contains", "NotContains"
+              "Mode": "ExactHeader", // or "HeaderPrefix", "Exists" , "Contains", "NotContains", "NotExists"
               "IsCaseSensitive": true
             }
           ],

@@ -2,9 +2,11 @@
 // Licensed under the MIT License.
 
 using System;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using Yarp.ReverseProxy.Utilities;
 
 namespace Yarp.ReverseProxy.Model;
 
@@ -46,10 +48,29 @@ internal sealed class ProxyPipelineInitializerMiddleware
             Route = route,
             Cluster = cluster.Model,
             AllDestinations = destinationsState.AllDestinations,
-            AvailableDestinations = destinationsState.AvailableDestinations
+            AvailableDestinations = destinationsState.AvailableDestinations,
         });
 
-        return _next(context);
+        var activity = Observability.YarpActivitySource.CreateActivity("proxy.forwarder", ActivityKind.Server);
+
+        return activity is null
+            ? _next(context)
+            : AwaitWithActivity(context, activity);
+    }
+
+    private async Task AwaitWithActivity(HttpContext context, Activity activity)
+    {
+        context.SetYarpActivity(activity);
+
+        activity.Start();
+        try
+        {
+            await _next(context);
+        }
+        finally
+        {
+            activity.Dispose();
+        }
     }
 
     private static class Log

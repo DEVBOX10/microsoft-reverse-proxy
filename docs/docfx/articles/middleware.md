@@ -25,7 +25,7 @@ public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
 } 
 ```
 
-The parmeterless `MapReverseProxy()` in [ReverseProxyIEndpointRouteBuilderExtensions](xref:Microsoft.AspNetCore.Builder.ReverseProxyIEndpointRouteBuilderExtensions) overload includes all standard proxy middleware for [session affinity](session-affinity.md), [load balancing](load-balancing.md), [passive health checks](dests-health-checks.md#Passive-health-checks), and the final proxying of the request. Each of these check the configuration of the matched route, cluster, and destination and perform their task accordingly.
+The parmeterless `MapReverseProxy()` in [ReverseProxyIEndpointRouteBuilderExtensions](xref:Microsoft.AspNetCore.Builder.ReverseProxyIEndpointRouteBuilderExtensions) overload includes all standard proxy middleware for [session affinity](session-affinity.md), [load balancing](load-balancing.md), [passive health checks](dests-health-checks.md#passive-health-checks), and the final proxying of the request. Each of these check the configuration of the matched route, cluster, and destination and perform their task accordingly.
 
 ## Adding Middleware
 
@@ -48,11 +48,11 @@ endpoints.MapReverseProxy(proxyPipeline =>
 });
 ```
 
-By default this overload of `MapReverseProxy` only includes the minimal setup and proxying logic at the start and end of its pipeline. Middleware for session affinity, load balancing, and passive health checks are not included by default so that you can exclude, replace, or control their ordering with any additional middleware.
+By default this overload of `MapReverseProxy` only includes the minimal setup, proxying logic, and limit enforcement at the start and end of its pipeline. Middleware for session affinity, load balancing, and passive health checks are not included by default so that you can exclude, replace, or control their ordering with any additional middleware.
 
 ## Custom Proxy Middleware
 
-Middlware inside the `MapReverseProxy` pipeline have access to all of the proxy data and state associated with a request (the route, cluster, destinations, etc.) through the [IReverseProxyFeature](xref:Yarp.ReverseProxy.Model.IReverseProxyFeature). This is available from `HttpContext.Features` or the extension method `HttpContext.GetReverseProxyFeature()`.
+Middleware inside the `MapReverseProxy` pipeline have access to all of the proxy data and state associated with a request (the route, cluster, destinations, etc.) through the [IReverseProxyFeature](xref:Yarp.ReverseProxy.Model.IReverseProxyFeature). This is available from `HttpContext.Features` or the extension method `HttpContext.GetReverseProxyFeature()`.
 
 The data in `IReverseProxyFeature` are snapshotted from the proxy configuration at the start of the proxy pipeline and will not be affected by proxy configuration changes that occur while the request is being processed.
 

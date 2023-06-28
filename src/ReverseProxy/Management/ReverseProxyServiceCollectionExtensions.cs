@@ -2,6 +2,8 @@
 // Licensed under the MIT License.
 
 using System;
+using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using System.Net.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -27,9 +29,12 @@ public static class ReverseProxyServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddHttpForwarder(this IServiceCollection services)
     {
-        services.TryAddSingleton<IClock, Clock>();
+        services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IHttpForwarder, HttpForwarder>();
         services.TryAddSingleton<ITransformBuilder, TransformBuilder>();
+
+        services.AddSingleton<DirectForwardingHttpClientProvider>();
+
         return services;
     }
 
@@ -83,7 +88,7 @@ public static class ReverseProxyServiceCollectionExtensions
     /// Registers a singleton IProxyConfigFilter service. Multiple filters are allowed and they will be run in registration order.
     /// </summary>
     /// <typeparam name="TService">A class that implements IProxyConfigFilter.</typeparam>
-    public static IReverseProxyBuilder AddConfigFilter<TService>(this IReverseProxyBuilder builder) where TService : class, IProxyConfigFilter
+    public static IReverseProxyBuilder AddConfigFilter<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TService>(this IReverseProxyBuilder builder) where TService : class, IProxyConfigFilter
     {
         if (builder is null)
         {
@@ -114,7 +119,7 @@ public static class ReverseProxyServiceCollectionExtensions
     /// Provides a <see cref="ITransformProvider"/> implementation that will be run for each route to conditionally add transforms.
     /// <see cref="AddTransforms{T}(IReverseProxyBuilder)"/> can be called multiple times to provide multiple distinct types.
     /// </summary>
-    public static IReverseProxyBuilder AddTransforms<T>(this IReverseProxyBuilder builder) where T : class, ITransformProvider
+    public static IReverseProxyBuilder AddTransforms<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T>(this IReverseProxyBuilder builder) where T : class, ITransformProvider
     {
         builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<ITransformProvider, T>());
         return builder;
@@ -125,7 +130,7 @@ public static class ReverseProxyServiceCollectionExtensions
     /// the associated transform actions. <see cref="AddTransformFactory{T}(IReverseProxyBuilder)"/> can be called multiple
     /// times to provide multiple distinct types.
     /// </summary>
-    public static IReverseProxyBuilder AddTransformFactory<T>(this IReverseProxyBuilder builder) where T : class, ITransformFactory
+    public static IReverseProxyBuilder AddTransformFactory<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T>(this IReverseProxyBuilder builder) where T : class, ITransformFactory
     {
         builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<ITransformFactory, T>());
         return builder;
@@ -141,6 +146,17 @@ public static class ReverseProxyServiceCollectionExtensions
         if (configure is null)
         {
             throw new ArgumentNullException(nameof(configure));
+        }
+
+        // Avoid overriding any other custom factories. This does not handle the case where a IForwarderHttpClientFactory
+        // is registered after this call.
+        var service = builder.Services.FirstOrDefault(service => service.ServiceType == typeof(IForwarderHttpClientFactory));
+        if (service is not null)
+        {
+            if (service.ImplementationType != typeof(ForwarderHttpClientFactory))
+            {
+                throw new InvalidOperationException($"ConfigureHttpClient will override the custom IForwarderHttpClientFactory type.");
+            }
         }
 
         builder.Services.AddSingleton<IForwarderHttpClientFactory>(services =>

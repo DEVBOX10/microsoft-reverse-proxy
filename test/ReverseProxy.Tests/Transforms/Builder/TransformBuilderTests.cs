@@ -5,13 +5,15 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 using Yarp.ReverseProxy.Configuration;
-using Yarp.ReverseProxy.Utilities;
+using Yarp.Tests.Common;
 
 namespace Yarp.ReverseProxy.Transforms.Builder.Tests;
 
@@ -308,7 +310,7 @@ public class TransformBuilderTests
         httpContext.Request.Host = new HostString("StartHost");
         var proxyRequest = new HttpRequestMessage();
         var destinationPrefix = "http://destinationhost:9090/path";
-        await results.TransformRequestAsync(httpContext, proxyRequest, destinationPrefix);
+        await results.TransformRequestAsync(httpContext, proxyRequest, destinationPrefix, CancellationToken.None);
 
         if (useOriginalHost.GetValueOrDefault(false))
         {
@@ -374,7 +376,7 @@ public class TransformBuilderTests
         var proxyRequest = new HttpRequestMessage();
         var destinationPrefix = "http://destinationhost:9090/path";
 
-        await results.TransformRequestAsync(httpContext, proxyRequest, destinationPrefix);
+        await results.TransformRequestAsync(httpContext, proxyRequest, destinationPrefix, CancellationToken.None);
 
         Assert.Equal("CustomHost", proxyRequest.Headers.Host);
     }
@@ -413,7 +415,51 @@ public class TransformBuilderTests
         Assert.True(forwardedTransform.ProtoEnabled);
     }
 
-    private static TransformBuilder CreateTransformBuilder()
+    [Fact]
+    public async Task CallerCallsOverloadsWihtoutCT_AllTransformsAreCalled()
+    {
+        var requestTransformsCalled = 0;
+        var responseTransformsCalled = 0;
+        var responseTrailerTransformsCalled = 0;
+
+        var transformer = CreateTransformBuilder().CreateInternal(context =>
+        {
+            context.AddRequestTransform(context =>
+            {
+                requestTransformsCalled++;
+                return default;
+            });
+            context.AddResponseTransform(context =>
+            {
+                responseTransformsCalled++;
+                return default;
+            });
+            context.AddResponseTrailersTransform(context =>
+            {
+                responseTrailerTransformsCalled++;
+                return default;
+            });
+        });
+
+        var httpContext = new DefaultHttpContext();
+        var proxyRequest = new HttpRequestMessage();
+        var proxyResponse = new HttpResponseMessage();
+        var destinationPrefix = "http://destinationhost:9090/path";
+
+        httpContext.Features.Set<IHttpResponseTrailersFeature>(new TestTrailersFeature());
+
+#pragma warning disable CS0618 // We're intentionally testing the obsolete overloads
+        await transformer.TransformRequestAsync(httpContext, proxyRequest, destinationPrefix);
+        await transformer.TransformResponseAsync(httpContext, proxyResponse);
+        await transformer.TransformResponseTrailersAsync(httpContext, proxyResponse);
+#pragma warning restore CS0618
+
+        Assert.Equal(1, requestTransformsCalled);
+        Assert.Equal(1, responseTransformsCalled);
+        Assert.Equal(1, responseTrailerTransformsCalled);
+    }
+
+    internal static TransformBuilder CreateTransformBuilder()
     {
         var serviceCollection = new ServiceCollection();
         serviceCollection.AddLogging();
