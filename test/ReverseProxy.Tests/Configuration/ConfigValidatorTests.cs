@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
@@ -726,6 +727,45 @@ public class ConfigValidatorTests
     }
 
     [Fact]
+    public async Task DestinationAddress_Works()
+    {
+        var services = CreateServices();
+        var validator = services.GetRequiredService<IConfigValidator>();
+
+        var cluster = new ClusterConfig {
+            ClusterId = "cluster1",
+            Destinations = new Dictionary<string, DestinationConfig>(StringComparer.OrdinalIgnoreCase) {
+                { "destination1", new DestinationConfig { Address = "https://localhost:1234" } }
+            }
+        };
+
+        var errors = await validator.ValidateClusterAsync(cluster);
+
+        Assert.Empty(errors);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public async Task DestinationAddressInvalid_Fails(string address)
+    {
+        var services = CreateServices();
+        var validator = services.GetRequiredService<IConfigValidator>();
+
+        var cluster = new ClusterConfig {
+            ClusterId = "cluster1",
+            Destinations = new Dictionary<string, DestinationConfig>(StringComparer.OrdinalIgnoreCase) {
+                { "destination1", new DestinationConfig { Address = address } }
+            }
+        };
+
+        var errors = await validator.ValidateClusterAsync(cluster);
+
+        var ex = Assert.Single(errors);
+        Assert.Equal("No address found for destination 'destination1' on cluster 'cluster1'.", ex.Message);
+    }
+
+    [Fact]
     public async Task LoadBalancingPolicy_KnownPolicy_Works()
     {
         var services = CreateServices();
@@ -893,7 +933,7 @@ public class ConfigValidatorTests
 
         var errors = await validator.ValidateClusterAsync(cluster);
 
-        Assert.Equal(1, errors.Count);
+        Assert.Single(errors);
         Assert.Equal($"Outgoing request version '{cluster.HttpRequest.Version}' is not any of supported HTTP versions (1.0, 1.1, 2 and 3).", errors[0].Message);
         Assert.IsType<ArgumentException>(errors[0]);
     }
@@ -957,7 +997,7 @@ public class ConfigValidatorTests
 
         var errors = await validator.ValidateClusterAsync(cluster);
 
-        Assert.Equal(1, errors.Count);
+        Assert.Single(errors);
         Assert.Contains(expectedError, errors[0].Message);
         Assert.IsType<ArgumentException>(errors[0]);
     }
@@ -1015,7 +1055,7 @@ public class ConfigValidatorTests
 
         var errors = await validator.ValidateClusterAsync(cluster);
 
-        Assert.Equal(1, errors.Count);
+        Assert.Single(errors);
         Assert.Contains(expectedError, errors[0].Message);
         Assert.IsType<ArgumentException>(errors[0]);
     }
@@ -1062,13 +1102,13 @@ public class ConfigValidatorTests
         var errors = await validator.ValidateClusterAsync(cluster);
 
         const string expectedError = "No matching IAvailableDestinationsPolicy found for the available destinations policy 'Unknown1' set on the cluster.";
-        Assert.Equal(1, errors.Count);
+        Assert.Single(errors);
         Assert.Contains(expectedError, errors[0].Message);
         Assert.IsType<ArgumentException>(errors[0]);
     }
 
     [Fact]
-    public async Task HttpClient_HeaderEncoding_Valid()
+    public async Task HttpClient_RequestHeaderEncoding_Valid()
     {
         var services = CreateServices();
         var validator = services.GetRequiredService<IConfigValidator>();
@@ -1084,11 +1124,11 @@ public class ConfigValidatorTests
 
         var errors = await validator.ValidateClusterAsync(cluster);
 
-        Assert.Equal(0, errors.Count);
+        Assert.Empty(errors);
     }
 
     [Fact]
-    public async Task HttpClient_HeaderEncoding_Invalid()
+    public async Task HttpClient_RequestHeaderEncoding_Invalid()
     {
         var services = CreateServices();
         var validator = services.GetRequiredService<IConfigValidator>();
@@ -1104,7 +1144,48 @@ public class ConfigValidatorTests
 
         var errors = await validator.ValidateClusterAsync(cluster);
 
-        Assert.Equal(1, errors.Count);
-        Assert.Equal("Invalid header encoding 'base64'.", errors[0].Message);
+        Assert.Single(errors);
+        Assert.Equal("Invalid request header encoding 'base64'.", errors[0].Message);
+    }
+
+    [Fact]
+    public async Task HttpClient_ResponseHeaderEncoding_Valid()
+    {
+        var services = CreateServices();
+        var validator = services.GetRequiredService<IConfigValidator>();
+
+        var cluster = new ClusterConfig
+        {
+            ClusterId = "cluster1",
+            HttpClient = new HttpClientConfig
+            {
+                ResponseHeaderEncoding = "utf-8"
+            }
+        };
+
+        var errors = await validator.ValidateClusterAsync(cluster);
+
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public async Task HttpClient_ResponseHeaderEncoding_Invalid()
+    {
+        var services = CreateServices();
+        var validator = services.GetRequiredService<IConfigValidator>();
+
+        var cluster = new ClusterConfig
+        {
+            ClusterId = "cluster1",
+            HttpClient = new HttpClientConfig
+            {
+                ResponseHeaderEncoding = "base64"
+            }
+        };
+
+        var errors = await validator.ValidateClusterAsync(cluster);
+
+        Assert.Single(errors);
+        Assert.Equal("Invalid response header encoding 'base64'.", errors[0].Message);
     }
 }

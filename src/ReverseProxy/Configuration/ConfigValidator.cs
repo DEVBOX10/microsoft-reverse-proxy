@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -31,11 +32,11 @@ internal sealed class ConfigValidator : IConfigValidator
     private readonly IAuthorizationPolicyProvider _authorizationPolicyProvider;
     private readonly IYarpRateLimiterPolicyProvider _rateLimiterPolicyProvider;
     private readonly ICorsPolicyProvider _corsPolicyProvider;
-    private readonly IDictionary<string, ILoadBalancingPolicy> _loadBalancingPolicies;
-    private readonly IDictionary<string, IAffinityFailurePolicy> _affinityFailurePolicies;
-    private readonly IDictionary<string, IAvailableDestinationsPolicy> _availableDestinationsPolicies;
-    private readonly IDictionary<string, IActiveHealthCheckPolicy> _activeHealthCheckPolicies;
-    private readonly IDictionary<string, IPassiveHealthCheckPolicy> _passiveHealthCheckPolicies;
+    private readonly FrozenDictionary<string, ILoadBalancingPolicy> _loadBalancingPolicies;
+    private readonly FrozenDictionary<string, IAffinityFailurePolicy> _affinityFailurePolicies;
+    private readonly FrozenDictionary<string, IAvailableDestinationsPolicy> _availableDestinationsPolicies;
+    private readonly FrozenDictionary<string, IActiveHealthCheckPolicy> _activeHealthCheckPolicies;
+    private readonly FrozenDictionary<string, IPassiveHealthCheckPolicy> _passiveHealthCheckPolicies;
     private readonly ILogger _logger;
 
 
@@ -112,6 +113,7 @@ internal sealed class ConfigValidator : IConfigValidator
         }
 
         errors.AddRange(_transformBuilder.ValidateCluster(cluster));
+        ValidateDestinations(errors, cluster);
         ValidateLoadBalancing(errors, cluster);
         ValidateSessionAffinity(errors, cluster);
         ValidateProxyHttpClient(errors, cluster);
@@ -366,6 +368,21 @@ internal sealed class ConfigValidator : IConfigValidator
         }
     }
 
+    private void ValidateDestinations(IList<Exception> errors, ClusterConfig cluster)
+    {
+        if (cluster.Destinations is null)
+        {
+            return;
+        }
+        foreach (var (name, destination) in cluster.Destinations)
+        {
+            if (string.IsNullOrEmpty(destination.Address))
+            {
+                errors.Add(new ArgumentException($"No address found for destination '{name}' on cluster '{cluster.ClusterId}'."));
+            }
+        }
+    }
+
     private void ValidateLoadBalancing(IList<Exception> errors, ClusterConfig cluster)
     {
         var loadBalancingPolicy = cluster.LoadBalancingPolicy;
@@ -439,16 +456,29 @@ internal sealed class ConfigValidator : IConfigValidator
             errors.Add(new ArgumentException($"Max connections per server limit set on the cluster '{cluster.ClusterId}' must be positive."));
         }
 
-        var encoding = cluster.HttpClient.RequestHeaderEncoding;
-        if (encoding is not null)
+        var requestHeaderEncoding = cluster.HttpClient.RequestHeaderEncoding;
+        if (requestHeaderEncoding is not null)
         {
             try
             {
-                Encoding.GetEncoding(encoding);
+                Encoding.GetEncoding(requestHeaderEncoding);
             }
             catch (ArgumentException aex)
             {
-                errors.Add(new ArgumentException($"Invalid header encoding '{encoding}'.", aex));
+                errors.Add(new ArgumentException($"Invalid request header encoding '{requestHeaderEncoding}'.", aex));
+            }
+        }
+
+        var responseHeaderEncoding = cluster.HttpClient.ResponseHeaderEncoding;
+        if (responseHeaderEncoding is not null)
+        {
+            try
+            {
+                Encoding.GetEncoding(responseHeaderEncoding);
+            }
+            catch (ArgumentException aex)
+            {
+                errors.Add(new ArgumentException($"Invalid response header encoding '{responseHeaderEncoding}'.", aex));
             }
         }
     }
@@ -482,7 +512,7 @@ internal sealed class ConfigValidator : IConfigValidator
         if (string.IsNullOrEmpty(availableDestinationsPolicy))
         {
             // The default.
-            availableDestinationsPolicy = HealthCheckConstants.AvailableDestinations.HealthyAndUnknown;
+            availableDestinationsPolicy = HealthCheckConstants.AvailableDestinations.HealthyOrPanic;
         }
 
         if (!_availableDestinationsPolicies.ContainsKey(availableDestinationsPolicy))

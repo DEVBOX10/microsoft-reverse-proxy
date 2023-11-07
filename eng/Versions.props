@@ -12,7 +12,8 @@
   </PropertyGroup>
   <!--Package versions-->
   <PropertyGroup>
-    <MicrosoftBclTimeProviderVersion>8.0.0-preview.4.23220.7</MicrosoftBclTimeProviderVersion>
-    <MicrosoftDotNetXUnitExtensionsPackageVersion>8.0.0-beta.23322.2</MicrosoftDotNetXUnitExtensionsPackageVersion>
+    <SystemCollectionsImmutableVersion>8.0.0-rc.1.23419.4</SystemCollectionsImmutableVersion>
+    <MicrosoftBclTimeProviderVersion>8.0.0-rc.1.23419.4</MicrosoftBclTimeProviderVersion>
+    <MicrosoftDotNetXUnitExtensionsPackageVersion>9.0.0-beta.23553.1</MicrosoftDotNetXUnitExtensionsPackageVersion>
   </PropertyGroup>
 </Project>
